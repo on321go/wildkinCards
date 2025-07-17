@@ -1,0 +1,188 @@
+{
+  "grades": {
+    "Kindergarten": {
+      "random": [
+        "I see a cat.", "The sun is hot.", "We can go.", "I like dogs.", "Look at me.",
+        "She is nice.", "He has a hat.", "We play here.", "The box is big.", "I can run fast.",
+        "It is a bug.", "Go to bed.", "I have a cup.", "The dog is wet.", "Come with me.",
+        "The pig is red.", "I see a bee.", "Sit by me.", "My mom is here.", "This is fun!",
+        "I can hop.", "She is fun.", "We see a dog.", "The sun is big.", "He can jump.",
+        "I like red.", "Look at the bug.", "My cat is fat.", "Go to bed.", "Sit with me.",
+        "I like jam.", "Run to mom.", "That is hot.", "The top is red.", "Get in line.",
+        "I see you.", "The pig can dig.", "This is my box.", "I am mad.", "It is on me."
+      ],
+      "stories": [
+        {
+          "title": "The Lost Hat",
+          "sentences": [ "Tim had a red hat.", "The wind blew it away.", "“Oh no!” said Tim.", "He ran to get it.", "Tim got his hat back!" ]
+        },
+        {
+          "title": "A Bug in the Tub",
+          "sentences": [ "I saw a bug.", "It was in the tub!", "Mom got a cup.", "She put the bug out.", "“Thank you!” I said." ]
+        },
+        {
+          "title": "The Big Dog",
+          "sentences": [ "A big dog ran fast.", "It had a blue ball.", "The ball hit the tree.", "The dog barked and wagged.", "I gave it back." ]
+        },
+        {
+          "title": "My Birthday Cake",
+          "sentences": [ "I had cake today.", "It had red dots.", "Mom lit five candles.", "I made a big wish.", "Yum! It was so good!" ]
+        },
+        {
+          "title": "The Big Box",
+          "sentences": [ "I got a big box.", "I sat in it.", "I made it a ship.", "Mom said, “Sail away!”", "I went to the moon." ]
+        },
+        {
+          "title": "The Red Ball",
+          "sentences": [ "The ball is red.", "It went up high.", "It hit the tree.", "Dad got it down.", "I said, “Thank you!”" ]
+        },
+        {
+          "title": "A Duck in the Mud",
+          "sentences": [ "The duck ran fast.", "It went in the mud.", "The duck got wet.", "I got wet too!", "We had fun!" ]
+        },
+        {
+          "title": "My New Pet",
+          "sentences": [ "I have a pet.", "It is a fish.", "It swims a lot.", "I feed it food.", "I call it Bubbles." ]
+        }
+      ]
+    },
+    "1st Grade": {
+        "random": [
+            "I have a red bike.", "The dog likes to play.", "We went to the park.", "She can jump high.", "I like to eat apples.",
+            "My dad is very tall.", "The bird is in the tree.", "He ran down the hill.", "We saw a blue car.", "The fish can swim fast.",
+            "I will help you.", "They are my friends.", "The baby is sleeping.", "It is cold outside.", "I can read this book.",
+            "The frog is green.", "She has a pink dress.", "We made a big mess.", "I want a new toy.", "The cake looks good.",
+            "I can read this book.", "We went to the zoo today.", "My shoe is under the bed.", "The cat is sleeping on the chair.", "I want to ride my bike.",
+            "The sun is warm and bright.", "Dad made pancakes for breakfast.", "I like to sing songs.", "The bird flew away fast.", "Can I have some juice?",
+            "My dog chased a squirrel.", "The cake has pink frosting.", "She has a big smile.", "We jumped in the puddles.", "I saw a rainbow in the sky.",
+            "The swing went up so high.", "I like to draw pictures.", "We are going to the store.", "The frog jumped in the pond.", "I helped clean my room."
+        ],
+        "stories": [
+            {
+                "title": "The Snowman",
+                "sentences": [ "It snowed all day long.", "We made a big snowman.", "He had a carrot nose.", "We gave him a hat and scarf.", "He looked happy and cold!" ]
+            },
+            {
+                "title": "The Picnic",
+                "sentences": [ "We went to the park for a picnic.", "I brought a sandwich and juice.", "A bug landed on my food!", "I waved it away and laughed.", "Then we played on the swings." ]
+            },
+            {
+                "title": "The Lost Cat",
+                "sentences": [ "Our cat ran out the door.", "We looked in the yard.", "I called her name loud.", "She came running back!", "I gave her a big hug." ]
+            },
+            {
+                "title": "The Magic Box",
+                "sentences": [ "I found a shiny box.", "It made a soft hum.", "I opened it slowly.", "A light flew out fast!", "It was just my toy flashlight." ]
+            },
+            {
+                "title": "The Balloon Ride",
+                "sentences": [ "I got a balloon at the fair.", "It was big and blue.", "A wind came and took it up.", "We watched it fly far.", "I waved goodbye to my balloon." ]
+            },
+            {
+                "title": "The Little Boat",
+                "sentences": [ "We made a boat from paper.", "We put it in the stream.", "It floated past rocks and grass.", "It spun in a circle and kept going.", "We clapped as it went out of sight." ]
+            },
+            {
+                "title": "The Surprise Gift",
+                "sentences": [ "There was a box on the table.", "It had a big red bow.", "I opened it slowly.", "It had a toy dog inside!", "I hugged it tight." ]
+            },
+            {
+                "title": "The Loud Sound",
+                "sentences": [ "I heard a loud boom.", "I looked out the window.", "It was just thunder.", "The rain came down fast.", "I stayed cozy inside." ]
+            }
+        ]
+    },
+    "2nd Grade": {
+        "random": [
+            "I rode my bike to school today.", "The rabbit hid under the bush.", "My sister and I played a game.", "It was sunny, so we went swimming.", "The stars twinkled in the sky.",
+            "I packed my lunch by myself.", "We saw a rainbow after the rain.", "The puppy barked at the squirrel.", "I love to read chapter books.", "Dad made pancakes for breakfast.",
+            "I lost my hat at the zoo.", "She drew a picture of a dragon.", "The flower grew in the garden.", "We watched a movie last night.", "I like to sing and dance.",
+            "My shoes are too small now.", "The snow was deep and soft.", "I helped mom wash the car.", "He told a funny joke.", "The cake was sweet and yummy.",
+            "I love to write stories in my notebook.", "The wind made the leaves dance.", "We made a kite and flew it at the park.", "My sister baked a chocolate cake.", "The dog barked at the mail truck.",
+            "I planted seeds and watched them grow.", "It rained all night, but the sun came out today.", "I helped wash the car on Saturday.", "The cat jumped onto the window sill.", "My shoes got wet in the puddle.",
+            "We built a snowman with a carrot nose.", "I saw a ladybug on my arm.", "The book I read had a dragon in it.", "Dad read me a bedtime story.", "I drew a picture of my family.",
+            "The spider spun a web in the corner.", "I saw a rocket launch on TV.", "My friend and I rode our scooters.", "We had popcorn during the movie.", "I want to learn how to skateboard."
+        ],
+        "stories": [
+            {
+                "title": "The Missing Shoe",
+                "sentences": [ "Max couldn’t find his shoe.", "He looked under his bed.", "He looked behind the couch.", "At last, he found it in his toy bin.", "“How did it get there?” he laughed." ]
+            },
+            {
+                "title": "The Rainy Day Fort",
+                "sentences": [ "It rained all morning, so we stayed inside.", "My sister and I built a fort with blankets.", "We put pillows and books inside.", "We read stories with a flashlight.", "It was the best rainy day ever!" ]
+            },
+            {
+                "title": "Grandma’s Garden",
+                "sentences": [ "I helped Grandma plant flowers.", "We dug little holes in the dirt.", "She gave me seeds to drop in.", "We watered them with a hose.", "She said, “You’ll see them grow soon!”" ]
+            },
+            {
+                "title": "The Silly Chicken",
+                "sentences": [ "A chicken ran through the yard.", "It chased a balloon across the grass.", "We all laughed and followed it.", "The balloon popped with a loud bang!", "The chicken jumped and ran back to the coop." ]
+            },
+            {
+                "title": "The Campfire Night",
+                "sentences": [ "We built a campfire in the backyard.", "I roasted marshmallows on a stick.", "We told silly stories in the dark.", "The stars came out one by one.", "I fell asleep in my sleeping bag." ]
+            },
+            {
+                "title": "The Lost Tooth",
+                "sentences": [ "My tooth felt wiggly today.", "I bit an apple and it popped out!", "I put it under my pillow at night.", "The Tooth Fairy left a shiny coin.", "I smiled with a gap in my teeth." ]
+            },
+            {
+                "title": "The Fast Turtle",
+                "sentences": [ "We saw a turtle at the pond.", "It moved faster than I thought.", "It swam across the water quickly.", "Then it climbed onto a log.", "It looked like it was smiling!" ]
+            },
+            {
+                "title": "The Mystery Smell",
+                "sentences": [ "I smelled something sweet in the air.", "I followed my nose to the kitchen.", "Mom was baking cookies!", "I helped her put chocolate chips in.", "We shared them with the whole family." ]
+            }
+        ]
+    },
+    "3rd Grade": {
+        "random": [
+            "I finished reading my favorite book last night.", "The wind blew the leaves across the yard.", "She practiced piano every day after school.", "We went on a field trip to the museum.", "The dragonfly landed on my hand.",
+            "My little brother learned how to tie his shoes.", "I wrote a story about a magical island.", "The fire crackled and glowed in the fireplace.", "They built a tall tower out of blocks.", "Our team won the soccer game!",
+            "I saw a shooting star in the night sky.", "The cupcakes smelled so sweet and warm.", "I wore my costume to the party.", "He laughed when the balloon popped.", "We planted seeds in the school garden.",
+            "She whispered a secret to her friend.", "The ice cream melted in the sun.", "My grandma told me a bedtime story.", "We heard thunder and saw lightning.", "The raccoon snuck into the trash can.",
+            "I wrote a letter to my cousin in another state.", "The mountain was covered in snow and ice.", "I watched a spider spin a perfect web.", "My grandma showed me how to knit.", "The storm made the lights flicker.",
+            "I saw dolphins jumping in the ocean.", "We made a treasure map for our backyard.", "I read a book about dinosaurs and fossils.", "Our teacher told us a story from her childhood.", "The robot toy moved and made sounds.",
+            "I heard a woodpecker tapping on the tree.", "We went hiking and saw deer tracks.", "I packed snacks for our picnic.", "The rocket shot into the sky with fire.", "I helped my brother learn to ride his bike.",
+            "The fireworks lit up the whole sky.", "We saw a turtle crossing the road.", "My pencil broke during the test.", "I built a tower with cards.", "I saw a shooting star and made a wish."
+        ],
+        "stories": [
+            {
+                "title": "The Kite Adventure",
+                "sentences": [ "Lily flew her kite high in the windy sky.", "A big gust pulled it toward the trees.", "It got stuck in the tallest branch.", "Dad climbed a ladder to get it down.", "Lily clapped as her kite flew once more." ]
+            },
+            {
+                "title": "The Secret Door",
+                "sentences": [ "Sam found a loose board behind the bookshelf.", "He pulled it and saw a tiny wooden door.", "It creaked open to a dusty old tunnel.", "He crawled inside with a flashlight.", "It led to a hidden room full of toys!" ]
+            },
+            {
+                "title": "The Class Pet",
+                "sentences": [ "Our class got a pet hamster named Waffles.", "He loved to run on his wheel.", "One day, Waffles escaped his cage!", "We found him hiding in the teacher’s shoe.", "Now we make sure the lid is closed tight." ]
+            },
+            {
+                "title": "The Lemonade Stand",
+                "sentences": [ "Mia and Jack set up a lemonade stand.", "They made signs and decorated the table.", "People came from all over the block.", "They earned ten dollars in one day.", "They bought ice cream to celebrate their hard work." ]
+            },
+            {
+                "title": "The Haunted Tent",
+                "sentences": [ "We set up a tent in the living room for fun.", "At night, we heard a creaking sound.", "We shined a flashlight and saw the cat!", "She had knocked over a book.", "We laughed and told ghost stories anyway." ]
+            },
+            {
+                "title": "The Art Show",
+                "sentences": [ "I painted a picture of a volcano for school.", "I used red, orange, and yellow for the lava.", "My picture was put in the school art show.", "People stopped and said they liked it.", "I felt proud of my hard work." ]
+            },
+            {
+                "title": "The Runaway Balloon",
+                "sentences": [ "At the fair, I got a balloon shaped like a dinosaur.", "I let go, and it floated up into the sky.", "I watched it drift higher and higher.", "A bird flew by and made it spin.", "I waved goodbye and smiled." ]
+            },
+            {
+                "title": "The New Student",
+                "sentences": [ "A new kid came to our class today.", "He was quiet and didn’t know anyone.", "I asked him to sit by me at lunch.", "We played tag together at recess.", "Now we are good friends." ]
+            }
+        ]
+    }
+  }
+}
