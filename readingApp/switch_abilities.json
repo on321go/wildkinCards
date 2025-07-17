@@ -1,0 +1,37 @@
+[
+  {
+    "id": 101,
+    "name": "Rock Wall",
+    "description": "When this Wildkin switches in, it gets +2 Shield until your next turn."
+  },
+  {
+    "id": 102,
+    "name": "Tuck In",
+    "description": "When this Wildkin switches in, it heals itself for 2 HP."
+  },
+  {
+    "id": 103,
+    "name": "Pounce",
+    "description": "When this Wildkin switches in, immediately deal 1 damage to the opponent's active Wildkin."
+  },
+  {
+    "id": 104,
+    "name": "Sharpen Claws",
+    "description": "When this Wildkin switches in, its next attack deals +2 damage."
+  },
+  {
+    "id": 105,
+    "name": "Surprise Strike",
+    "description": "When this Wildkin switches in, immediately deal 3 damage to the opponent's Active Wildkin."
+  },
+  {
+    "id": 106,
+    "name": "Soothing Song",
+    "description": "When this Wildkin switches in, your entire team (active and benched) heals for 3 HP."
+  },
+  {
+    "id": 107,
+    "name": "Helping Hand",
+    "description": "When this Wildkin switches in, it heals any one Wildkin for 3 HP."
+  }
+]

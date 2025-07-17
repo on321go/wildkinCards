@@ -1,0 +1,37 @@
+[
+  {
+    "id": 201,
+    "name": "Invincible",
+    "description": "This Wildkin takes 0 damage from the next attack that hits it."
+  },
+  {
+    "id": 202,
+    "name": "Reflect Damage",
+    "description": "The next time this Wildkin is attacked, it takes half damage and the attacker takes the other half."
+  },
+  {
+    "id": 203,
+    "name": "Burrow",
+    "description": "This Wildkin takes no damage from attacks until your next turn."
+  },
+  {
+    "id": 204,
+    "name": "Mighty Blow",
+    "description": "Attack is buffed by 4 and immediately attacks!"
+  },
+  {
+    "id": 205,
+    "name": "Precision Shot",
+    "description": "Deal 5 damage to one of the opponent's benched Wildkin."
+  },
+  {
+    "id": 206,
+    "name": "Healing Waters",
+    "description": "Heal your entire team (active and benched) for 6 HP."
+  },
+  {
+    "id": 207,
+    "name": "Healing Focus",
+    "description": "Heal one Wildkin for 12 HP."
+  }
+]

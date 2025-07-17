@@ -1,0 +1,57 @@
+[
+  {
+    "id": 1,
+    "name": "Bear",
+    "archetype": "Guardian",
+    "stamina": 17,
+    "strength": 2,
+    "shield": 2,
+    "speed": 3
+  },
+  {
+    "id": 2,
+    "name": "Dolphin",
+    "archetype": "Supporter",
+    "stamina": 12,
+    "strength": 2,
+    "shield": 1,
+    "speed": 6
+  },
+  {
+    "id": 3,
+    "name": "Eagle",
+    "archetype": "Striker",
+    "stamina": 8,
+    "strength": 5,
+    "shield": 0,
+    "speed": 7
+  },
+  {
+    "id": 4,
+    "name": "Beaver",
+    "archetype": "Guardian",
+    "stamina": 14,
+    "strength": 3,
+    "shield": 1,
+    "speed": 5
+  },
+  {
+    "id": 5,
+    "name": "Cheetah",
+    "archetype": "Striker",
+    "stamina": 8,
+    "strength": 5,
+    "shield": 0,
+    "speed": 8
+  },
+  {
+    "id": 6,
+    "name": "Wolf",
+    "archetype": "Striker",
+    "stamina": 12,
+    "strength": 3,
+    "shield": 1,
+    "speed": 5
+  }
+]
+
