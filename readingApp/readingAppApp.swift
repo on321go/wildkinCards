@@ -10,23 +10,29 @@ import SwiftUI
 
 @main
 struct readingAppApp: App {
-    // Create the persistence controller
+    // The single source for Core Data and CloudKit persistence.
     let persistenceController = PersistenceController.shared
     
-    // Create the AppManager and pass the Core Data context to it
+    // The AppManager now manages the state for the entire app, including challenges and battles.
     @StateObject private var appManager: AppManager
     
+    // The ConnectionManager for multiplayer battles is prepared at the app's root.
+    @StateObject private var connectionManager = MultipeerConnectionManager.sharedInstance
+
     init() {
         let context = persistenceController.container.viewContext
         _appManager = StateObject(wrappedValue: AppManager(context: context))
     }
-    
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-            // Inject the managed object context into the environment
+                // Inject the Core Data context for views that need it.
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                // Inject the AppManager for global state management.
                 .environmentObject(appManager)
+                // Inject the ConnectionManager for all battle-related views.
+                .environmentObject(connectionManager)
         }
     }
 }
