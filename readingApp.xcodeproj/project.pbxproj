@@ -10,9 +10,22 @@
 		61C9932E2E281CDC00497773 /* readingApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = readingApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		615AE9802E36CD02004B78B8 /* Exceptions for "readingApp" folder in "readingApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 61C9932D2E281CDC00497773 /* readingApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		61C993302E281CDC00497773 /* readingApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				615AE9802E36CD02004B78B8 /* Exceptions for "readingApp" folder in "readingApp" target */,
+			);
 			path = readingApp;
 			sourceTree = "<group>";
 		};
@@ -252,6 +265,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = readingApp/Info.plist;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "We bust use Blootooth connections to find and play a wildkin battle.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs to use the microphone to listen to you read the sentences.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app needs to access speech recognition to check if you are reading the sentences correctly.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -293,6 +308,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = readingApp/Info.plist;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "We bust use Blootooth connections to find and play a wildkin battle.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs to use the microphone to listen to you read the sentences.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app needs to access speech recognition to check if you are reading the sentences correctly.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
