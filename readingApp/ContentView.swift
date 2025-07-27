@@ -1,16 +1,86 @@
 import SwiftUI
 import Speech
 import AVFoundation
+import CoreData
+import MultipeerConnectivity
+import Combine
+
+
+// MARK: - Persistence Controller (Core Data & CloudKit)
+// Manages the setup of the Core Data stack with iCloud synchronization.
+struct PersistenceController {
+    static let shared = PersistenceController()
+
+    let container: NSPersistentCloudKitContainer
+
+    init(inMemory: Bool = false) {
+        // The container name must match your .xcdatamodeld file name.
+        container = NSPersistentCloudKitContainer(name: "wildkin")
+        if inMemory {
+            container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
+        }
+        container.loadPersistentStores(completionHandler: { (storeDescription, error) in
+            if let error = error as NSError? {
+                // This is a critical error and should be handled gracefully in a production app.
+                fatalError("Unresolved error \(error), \(error.userInfo)")
+            }
+        })
+        // Automatically merge changes from other contexts (like background updates from iCloud).
+        container.viewContext.automaticallyMergesChangesFromParent = true
+    }
+}
+
+class DataManager {
+    static let shared = DataManager()
+    
+    // Properties are now initialized directly using the static load method.
+    let superPowers: [Power] = DataManager.load("super_powers.json")
+    let switchAbilities: [Power] = DataManager.load("switch_abilities.json")
+    
+    // The initializer is now empty as properties are initialized at declaration.
+    private init() {}
+    
+    func power(byName name: String?) -> Power? {
+        guard let name = name else { return nil }
+        if let power = superPowers.first(where: { $0.name == name }) {
+            return power
+        }
+        if let power = switchAbilities.first(where: { $0.name == name }) {
+            return power
+        }
+        return nil
+    }
+    
+    // The load method is now static to be callable during property initialization.
+    private static func load<T: Decodable>(_ filename: String) -> T {
+        let data: Data
+        guard let file = Bundle.main.url(forResource: filename, withExtension: nil) else {
+            fatalError("Couldn't find \(filename) in main bundle.")
+        }
+        do {
+            data = try Data(contentsOf: file)
+        } catch {
+            fatalError("Couldn't load \(filename) from main bundle:\n\(error)")
+        }
+        do {
+            let decoder = JSONDecoder()
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            fatalError("Couldn't parse \(filename) as \(T.self):\n\(error)")
+        }
+    }
+}
 
 // MARK: - App-Wide Data & State Management
 
-/// An enum to represent the main tabs of the app.
+/// Enum to represent the main tabs of the unified app.
 enum AppTab {
     case challenges
     case cards
+    case battle // New tab for the battle mode.
 }
 
-/// A central manager for the app's state, including user progress and card collection.
+/// The central manager for the app's state, handling everything from earning cards to initiating battles.
 @MainActor
 class AppManager: ObservableObject {
     // MARK: Published Properties
@@ -18,12 +88,12 @@ class AppManager: ObservableObject {
     @Published var correctAnswerCount = 0
     @Published var newCardsEarned = 0
     @Published var showCardEarnedAlert = false
-    
-    // Properties from the original CardStore
-    @Published var collectedCards: [AnimalCard] = []
     @Published var cardToUnwrap: AnimalCard? = nil
     
-    // MARK: Data Pools for Card Generation
+    // Core Data context for saving and fetching cards.
+    private let viewContext: NSManagedObjectContext
+    
+    // MARK: Data Pools for New Card Generation
     private var wildkinDeck: [WildkinData] = []
     private var superPowerPool: [Power] = []
     private var switchAbilityPool: [Power] = []
@@ -36,32 +106,31 @@ class AppManager: ObservableObject {
     private var strikerSwitchAbilities: [Power] = []
     private var supporterSwitchAbilities: [Power] = []
 
-    init() {
+    init(context: NSManagedObjectContext) {
+        self.viewContext = context
         loadAllCardData()
     }
     
     /// Increments the user's score and checks if they've earned a new card.
     func incrementScore() {
         correctAnswerCount += 1
-        if correctAnswerCount % 15 == 0 && correctAnswerCount > 0 {
+        if correctAnswerCount % 5 == 0 && correctAnswerCount > 0 {
             newCardsEarned += 1
             showCardEarnedAlert = true
         }
     }
     
-    /// Generates a new card to be unwrapped.
+    /// Generates a new `AnimalCard` object to be unwrapped by the user.
     func prepareNewCardForUnwrapping() {
         guard cardToUnwrap == nil, newCardsEarned > 0, let baseAnimal = wildkinDeck.randomElement() else { return }
         
         newCardsEarned -= 1
         
-        // 1. Determine Rarity
         let rarityRoll = Double.random(in: 0...1)
         var rarity: Rarity = .normal
         if rarityRoll > 0.95 { rarity = .epic }
         else if rarityRoll > 0.70 { rarity = .rare }
         
-        // 2. Apply stat modifications based on rarity
         var finalStamina = baseAnimal.stamina
         var finalStrength = baseAnimal.strength
         
@@ -71,7 +140,6 @@ class AppManager: ObservableObject {
         case .normal: break
         }
         
-        // 3. Assign Powers based on Archetype
         var assignedSuperPower: Power?
         var assignedSwitchAbility: Power?
 
@@ -88,7 +156,6 @@ class AppManager: ObservableObject {
         default: break
         }
         
-        // 4. Create the final AnimalCard instance
         let newCard = AnimalCard(
             name: baseAnimal.name,
             archetype: baseAnimal.archetype,
@@ -104,12 +171,33 @@ class AppManager: ObservableObject {
         self.cardToUnwrap = newCard
     }
     
-    /// Moves the unwrapped card to the user's collection.
+    /// Saves the newly unwrapped card to the user's collection in Core Data.
     func addCardToCollection() {
         guard let newCard = cardToUnwrap else { return }
-        withAnimation(.spring()) {
-            collectedCards.append(newCard)
-            cardToUnwrap = nil
+        
+        let cardEntity = Card(context: viewContext)
+        cardEntity.id = newCard.id
+        cardEntity.name = newCard.name
+        cardEntity.archetype = newCard.archetype
+        cardEntity.rarity = newCard.rarity.rawValue
+        cardEntity.stamina = Int16(newCard.stamina)
+        cardEntity.strength = Int16(newCard.strength)
+        cardEntity.shield = Int16(newCard.shield)
+        cardEntity.speed = Int16(newCard.speed)
+        cardEntity.superPowerName = newCard.superPower?.name
+        cardEntity.superPowerDescription = newCard.superPower?.description
+        cardEntity.switchAbilityName = newCard.switchAbility?.name
+        cardEntity.switchAbilityDescription = newCard.switchAbility?.description
+        cardEntity.timestamp = Date()
+        
+        do {
+            try viewContext.save()
+            withAnimation(.spring()) {
+                cardToUnwrap = nil
+            }
+        } catch {
+            let nsError = error as NSError
+            fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
         }
     }
     
@@ -151,10 +239,11 @@ class AppManager: ObservableObject {
 
 // MARK: - Main App View (Entry Point)
 struct ContentView: View {
-    @StateObject private var appManager = AppManager()
+    @EnvironmentObject var appManager: AppManager
 
     var body: some View {
         ZStack {
+            // The TabView is the primary navigation for the app.
             TabView(selection: $appManager.selectedTab) {
                 ChallengesView()
                     .tabItem {
@@ -168,14 +257,22 @@ struct ContentView: View {
                     }
                     .tag(AppTab.cards)
                     .badge(appManager.newCardsEarned > 0 ? "★" : nil)
+                
+                // The new Battle tab, which leads to the multiplayer lobby.
+                NavigationStack {
+                    LobbyView()
+                }
+                .tabItem {
+                    Label("Battle", systemImage: "bolt.horizontal.icloud.fill")
+                }
+                .tag(AppTab.battle)
             }
-            .environmentObject(appManager)
             
-            // Pop-up alert for earning a new card
+            // Pop-up alert for earning a new card.
             if appManager.showCardEarnedAlert {
                 CardEarnedPopup(onDismiss: {
                     appManager.showCardEarnedAlert = false
-                    appManager.selectedTab = .cards // Switch to the cards tab
+                    appManager.selectedTab = .cards // Switch to the cards tab to unwrap.
                 })
             }
         }
@@ -809,7 +906,7 @@ struct TappableWordsView: View {
 }
 
 
-// MARK: - ------------------ CARD COLLECTION ------------------
+// MARK: - ------------------ CARD COLLECTION & DATA MODELS ------------------
 
 // MARK: Card Data Models
 struct WildkinData: Codable, Identifiable {
@@ -822,42 +919,105 @@ struct WildkinData: Codable, Identifiable {
     let speed: Int
 }
 
-struct Power: Codable, Identifiable, Equatable {
+/// Represents the mechanical effect of a power in the game.
+struct PowerEffect: Codable, Equatable, Hashable {
+    let type: String
+    let target: String
+    let value: Int
+}
+
+/// Represents a Super Power or Switch Ability.
+struct Power: Codable, Identifiable, Equatable, Hashable {
     let id: Int
     let name: String
     let description: String
+    // This new property will hold the game mechanic data from the JSON.
+    // It's optional for flexibility.
+    let effect: PowerEffect?
 }
 
-enum Rarity: String, Codable {
+enum Rarity: String, Codable, CaseIterable {
     case normal
     case rare
     case epic
 }
 
-struct AnimalCard: Identifiable, Equatable {
-    let id = UUID()
+// This is the primary model for displaying and handling cards throughout the app.
+// It is now CODABLE to be sent over the multiplayer connection and includes
+// new properties for in-battle status effects.
+struct AnimalCard: Identifiable, Equatable, Hashable, Codable {
+    let id: UUID
     let name: String
     let archetype: String
     let rarity: Rarity
-    
-    // Final stats after rarity modifications
     let stamina: Int
     let strength: Int
     let shield: Int
     let speed: Int
-    
-    // Assigned powers
     let superPower: Power?
     let switchAbility: Power?
     
-    /// The name of the image asset for the card, adjusted for rarity.
+    // Battle-specific state properties
+    var currentHP: Int
+    var isSuperPowerUsed: Bool = false
+    var isActive: Bool = false
+    var attackBuff: Int = 0
+    
+    // NEW: Properties for Super Power & Switch Ability effects
+    var isImmune: Bool = false         // For "Burrow" (Turn-based)
+    var isInvincible: Bool = false     // For "Invincible" (Lasts until hit)
+    var reflectsDamage: Int = 0        // For "Reflect Damage", stores percentage
+    var temporaryShields: Int = 0      // For "Rock Wall" (Turn-based)
+    
+    var isKnockedOut: Bool { currentHP <= 0 }
+    
+    // Initializer to convert a Core Data 'Card' object into a displayable 'AnimalCard'
+    init(cardEntity: Card) {
+        self.id = cardEntity.id ?? UUID()
+        self.name = cardEntity.name ?? "Unknown"
+        self.archetype = cardEntity.archetype ?? "Unknown"
+        self.rarity = Rarity(rawValue: cardEntity.rarity ?? "normal") ?? .normal
+        self.stamina = Int(cardEntity.stamina)
+        self.strength = Int(cardEntity.strength)
+        self.shield = Int(cardEntity.shield)
+        self.speed = Int(cardEntity.speed)
+        
+        // The Power structs are created using the JSON data loaded at app start.
+        // We find the matching power by name.
+        self.superPower = DataManager.shared.power(byName: cardEntity.superPowerName)
+        self.switchAbility = DataManager.shared.power(byName: cardEntity.switchAbilityName)
+        
+        self.currentHP = Int(cardEntity.stamina)
+    }
+    
+    // Initializer for generating a new card before it's saved
+    init(name: String, archetype: String, rarity: Rarity, stamina: Int, strength: Int, shield: Int, speed: Int, superPower: Power?, switchAbility: Power?) {
+        self.id = UUID()
+        self.name = name
+        self.archetype = archetype
+        self.rarity = rarity
+        self.stamina = stamina
+        self.strength = strength
+        self.shield = shield
+        self.speed = speed
+        self.superPower = superPower
+        self.switchAbility = switchAbility
+        
+        self.currentHP = stamina
+    }
+    
     var imageName: String {
         switch rarity {
-        case .epic:
-            // Assumes you have assets named like "dolphinEpic.png"
-            return name.lowercased() + "Epic"
-        case .normal, .rare:
-            return name.lowercased()
+        case .epic: return name.lowercased() + "Epic"
+        case .normal, .rare: return name.lowercased()
+        }
+    }
+    
+    var rarityColor: Color {
+        switch rarity {
+        case .normal: return .gray
+        case .rare: return .blue
+        case .epic: return .purple
         }
     }
 }
@@ -865,6 +1025,14 @@ struct AnimalCard: Identifiable, Equatable {
 // MARK: Card Collection Main View
 struct CardCollectionView: View {
     @EnvironmentObject var appManager: AppManager
+    @Environment(\.managedObjectContext) private var viewContext
+
+    // Fetch cards from Core Data and sort them by timestamp
+    @FetchRequest(
+        sortDescriptors: [NSSortDescriptor(keyPath: \Card.timestamp, ascending: true)],
+        animation: .default)
+    private var cards: FetchedResults<Card>
+    
     @State private var showFireworks = false
     @State private var selectedCard: AnimalCard? = nil
     
@@ -885,10 +1053,12 @@ struct CardCollectionView: View {
                 
                 unwrappingZone.frame(maxHeight: .infinity)
                 
+                // Pass the fetched Core Data results to the grid view
                 CollectedCardsGridView(
-                    cards: appManager.collectedCards,
-                    onCardTapped: { card in
-                        withAnimation(.spring()) { selectedCard = card }
+                    cards: cards, // Use the @FetchRequest result
+                    onCardTapped: { cardEntity in
+                        // Convert the Core Data entity to a displayable struct
+                        withAnimation(.spring()) { selectedCard = AnimalCard(cardEntity: cardEntity) }
                     }
                 )
             }
@@ -1072,6 +1242,12 @@ struct AnimalCardView: View {
                         .font(.system(size: scaledFontSize * 1.5))
                         .shadow(radius: 3)
                         .position(x: cardWidth * 0.15, y: cardWidth * 0.15)
+                } else if card.rarity == .epic {
+                     Image(systemName: "crown.fill")
+                        .foregroundColor(.purple)
+                        .font(.system(size: scaledFontSize * 1.5))
+                        .shadow(radius: 3)
+                        .position(x: cardWidth * 0.15, y: cardWidth * 0.15)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -1080,8 +1256,9 @@ struct AnimalCardView: View {
 }
 
 struct CollectedCardsGridView: View {
-    let cards: [AnimalCard]
-    let onCardTapped: (AnimalCard) -> Void
+    // This view now accepts FetchedResults<Card> directly
+    let cards: FetchedResults<Card>
+    let onCardTapped: (Card) -> Void
     
     private let columns: [GridItem] = Array(repeating: .init(.flexible()), count: 3)
     
@@ -1094,11 +1271,12 @@ struct CollectedCardsGridView: View {
             
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 15) {
-                    ForEach(cards) { card in
-                        AnimalCardView(card: card)
+                    ForEach(cards) { cardEntity in
+                        // Convert the Core Data entity to a displayable struct for the view
+                        AnimalCardView(card: AnimalCard(cardEntity: cardEntity))
                             .aspectRatio(2.5/3.5, contentMode: .fit)
-                            .id(card.id)
-                            .onTapGesture { onCardTapped(card) }
+                            .id(cardEntity.id)
+                            .onTapGesture { onCardTapped(cardEntity) }
                     }
                 }
                 .padding()
@@ -1336,5 +1514,1183 @@ struct ParticleEffectView: View {
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
+            .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)
+            .environmentObject(AppManager(context: PersistenceController.shared.container.viewContext))
+            .environmentObject(MultipeerConnectionManager.sharedInstance)
+    }
+}
+
+
+// MARK: - ------------------ Battle Logic and Views ------------------
+
+// MARK: - Battle Game State Models
+// These models define the dynamic state of a live match.
+
+/// Represents a player in the battle, including their team of cards.
+struct Player: Identifiable, Equatable, Codable {
+    let id: Int
+    var name: String
+    var team: [AnimalCard]
+    
+    var activeWildkin: AnimalCard? {
+        team.first { $0.isActive && !$0.isKnockedOut }
+    }
+    
+    var benchedWildkin: [AnimalCard] {
+        team.filter { !$0.isActive && !$0.isKnockedOut }
+    }
+    
+    var hasLost: Bool {
+        team.allSatisfy { $0.isKnockedOut }
+    }
+}
+
+/// The single source of truth for the entire battle state, synchronized between players.
+struct GameState: Codable, Equatable {
+    var players: [Player]
+    var currentPlayerId: Int = 1
+    var turnNumber: Int = 1
+    var gameLog: [String] = ["Match Started!"]
+    var winner: Player? = nil
+    var isGameOver: Bool { winner != nil }
+    
+    /// This property holds the information for a pending action that requires a player to select a target.
+    /// When this is non-nil, the game pauses until the specified player provides input.
+    var pendingTargetInfo: TargetingInfo? = nil
+}
+
+/// Encapsulates all information needed for a pending targeting action.
+/// This struct is now Codable to be included in the synchronized GameState.
+struct TargetingInfo: Identifiable, Codable, Equatable {
+    let id = UUID()
+    let power: Power
+    let sourceCard: AnimalCard
+    let playerIndex: Int // The index of the player who needs to select a target.
+}
+
+// Defines the actions that can be sent between devices in a multiplayer match.
+
+enum GameAction: Codable, Equatable {
+    case sendTeam([AnimalCard])
+    case syncGameState(GameState)
+    case concede
+    
+    // Custom Equatable conformance for comparing actions.
+    static func == (lhs: GameAction, rhs: GameAction) -> Bool {
+        switch (lhs, rhs) {
+        case (.sendTeam(let a), .sendTeam(let b)):
+            return a == b
+        case (.syncGameState(let a), .syncGameState(let b)):
+            return a == b
+        case (.concede, .concede):
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+struct MatchConfig: Identifiable, Hashable { let id = UUID(); let playerTeam: [AnimalCard]; let opponentTeam: [AnimalCard]; let isMultiplayer: Bool }
+
+
+// MARK: - Multiplayer Connection Manager
+// Manages the discovery, connection, and data transmission between devices using MultipeerConnectivity.
+class MultipeerConnectionManager: NSObject, ObservableObject {
+    static let sharedInstance = MultipeerConnectionManager()
+    
+    @Published var availablePeers: Set<MCPeerID> = []
+    @Published var connectedPeer: MCPeerID?
+    @Published var receivedAction: GameAction?
+    @Published var isConnected: Bool = false
+    
+    var myPeerId: MCPeerID
+    var currentUsername: String {
+        let username = UsernameManager.shared.username
+        return username.isEmpty ? UIDevice.current.name : username
+    }
+    
+    private let serviceType = "wildkin-battle"
+    private var session: MCSession
+    private var serviceAdvertiser: MCNearbyServiceAdvertiser
+    private var serviceBrowser: MCNearbyServiceBrowser
+    private var cancellables = Set<AnyCancellable>()
+
+    private override init() {
+        let peerID = MCPeerID(displayName: UsernameManager.shared.username.isEmpty ? UIDevice.current.name : UsernameManager.shared.username)
+        self.myPeerId = peerID
+        self.session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
+        self.serviceAdvertiser = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: nil, serviceType: serviceType)
+        self.serviceBrowser = MCNearbyServiceBrowser(peer: peerID, serviceType: serviceType)
+        
+        super.init()
+        
+        self.session.delegate = self
+        self.serviceAdvertiser.delegate = self
+        self.serviceBrowser.delegate = self
+        
+        start()
+    }
+    
+    deinit {
+        stop()
+    }
+    
+    func start() {
+        serviceAdvertiser.startAdvertisingPeer()
+        serviceBrowser.startBrowsingForPeers()
+    }
+    
+    func stop() {
+        serviceAdvertiser.stopAdvertisingPeer()
+        serviceBrowser.stopBrowsingForPeers()
+        session.disconnect()
+    }
+    
+    func invitePeer(_ peerID: MCPeerID) {
+        serviceBrowser.invitePeer(peerID, to: session, withContext: nil, timeout: 30)
+    }
+    
+    func send(action: GameAction) {
+        guard !session.connectedPeers.isEmpty else { return }
+        
+        do {
+            let data = try JSONEncoder().encode(action)
+            try session.send(data, toPeers: session.connectedPeers, with: .reliable)
+        } catch {
+            print("Error sending action: \(error.localizedDescription)")
+        }
+    }
+    
+    func resetForNewUsername() {
+        stop()
+        
+        let newPeerID = MCPeerID(displayName: self.currentUsername)
+        self.myPeerId = newPeerID
+        self.session = MCSession(peer: newPeerID, securityIdentity: nil, encryptionPreference: .required)
+        self.serviceAdvertiser = MCNearbyServiceAdvertiser(peer: newPeerID, discoveryInfo: nil, serviceType: serviceType)
+        self.serviceBrowser = MCNearbyServiceBrowser(peer: newPeerID, serviceType: serviceType)
+        
+        self.session.delegate = self
+        self.serviceAdvertiser.delegate = self
+        self.serviceBrowser.delegate = self
+        
+        start()
+    }
+}
+
+// MARK: - Delegate Conformance for MultipeerConnectivity
+extension MultipeerConnectionManager: MCSessionDelegate, MCNearbyServiceAdvertiserDelegate, MCNearbyServiceBrowserDelegate {
+    func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String : String]?) {
+        DispatchQueue.main.async { self.availablePeers.insert(peerID) }
+    }
+    
+    func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
+        DispatchQueue.main.async { self.availablePeers.remove(peerID) }
+    }
+    
+    func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        // Auto-accept invitations for a smoother user experience.
+        invitationHandler(true, self.session)
+    }
+    
+    func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        DispatchQueue.main.async {
+            switch state {
+            case .connected:
+                self.connectedPeer = peerID
+                self.isConnected = true
+                self.serviceBrowser.stopBrowsingForPeers()
+            case .notConnected:
+                if self.connectedPeer == peerID {
+                    self.connectedPeer = nil
+                    self.isConnected = false
+                    self.serviceBrowser.startBrowsingForPeers()
+                }
+            case .connecting:
+                break
+            @unknown default:
+                fatalError("Unknown MCSessionState received")
+            }
+        }
+    }
+    
+    func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
+        do {
+            let action = try JSONDecoder().decode(GameAction.self, from: data)
+            DispatchQueue.main.async {
+                self.receivedAction = action
+            }
+        } catch {
+            print("Error decoding received data: \(error.localizedDescription)")
+        }
+    }
+    
+    // Required delegate methods that are not used in this implementation.
+    func session(_ session: MCSession, didReceive stream: InputStream, withName streamName: String, fromPeer peerID: MCPeerID) {}
+    func session(_ session: MCSession, didStartReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, with progress: Progress) {}
+    func session(_ session: MCSession, didFinishReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, at localURL: URL?, withError error: Error?) {}
+}
+
+
+// MARK: - Username Management
+// A singleton class to manage the player's username across the app.
+class UsernameManager: ObservableObject {
+    static let shared = UsernameManager()
+    
+    @Published var username: String = ""
+    private let usernameKey = "WildkinBattle_Username"
+    
+    private init() {
+        loadUsername()
+    }
+    
+    func loadUsername() {
+        username = UserDefaults.standard.string(forKey: usernameKey) ?? ""
+    }
+    
+    func saveUsername(_ name: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        username = trimmedName
+        UserDefaults.standard.set(trimmedName, forKey: usernameKey)
+        
+        // When the username changes, the connection manager must be reset to broadcast the new name.
+        MultipeerConnectionManager.sharedInstance.resetForNewUsername()
+    }
+    
+    var hasUsername: Bool {
+        !username.isEmpty
+    }
+}
+
+
+
+// MARK: - MatchManager (The Game Engine)
+// This class contains all the logic for a battle, including player actions and game state transitions.
+class MatchManager: ObservableObject {
+    @Published var gameState: GameState
+    @Published var isShowingTurnSummary = false
+    @Published var recentActionLog: [String] = []
+    
+    let isMultiplayer: Bool
+    private var connectionManager: MultipeerConnectionManager?
+    private var cancellables = Set<AnyCancellable>()
+
+    init(playerTeam: [AnimalCard], opponentTeam: [AnimalCard], isMultiplayer: Bool = false, connectionManager: MultipeerConnectionManager? = nil) {
+        self.isMultiplayer = isMultiplayer
+        self.connectionManager = connectionManager
+        
+        let localPlayerName = connectionManager?.currentUsername ?? "Player 1"
+        let opponentPlayerName = connectionManager?.connectedPeer?.displayName ?? "Player 2"
+        
+        // Determine turn order alphabetically to ensure consistency across devices.
+        let names = [localPlayerName, opponentPlayerName].sorted()
+        let localIsFirst = names[0] == localPlayerName
+        
+        let firstPlayer = Player(id: 1, name: localIsFirst ? localPlayerName : opponentPlayerName, team: localIsFirst ? playerTeam : opponentTeam)
+        let secondPlayer = Player(id: 2, name: localIsFirst ? opponentPlayerName : localPlayerName, team: localIsFirst ? opponentTeam : playerTeam)
+        
+        self.gameState = GameState(players: [firstPlayer, secondPlayer])
+        
+        // Ensure the game can start.
+        guard gameState.players.count == 2, !gameState.players[0].team.isEmpty, !gameState.players[1].team.isEmpty else { return }
+        
+        // Set the initial active cards.
+        gameState.players[0].team[0].isActive = true
+        gameState.players[1].team[0].isActive = true
+        
+        if isMultiplayer {
+            listenForActions()
+            // The first player is responsible for the initial state sync.
+            if localIsFirst {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncGameState() }
+            }
+        }
+    }
+    
+    // MARK: - Helper Functions
+    private var currentPlayer: Player? { guard let index = getCurrentPlayerIndex() else { return nil }; return gameState.players[index] }
+    func getPlayerIndex(for id: Int) -> Int? { gameState.players.firstIndex { $0.id == id } }
+    func getCurrentPlayerIndex() -> Int? { getPlayerIndex(for: gameState.currentPlayerId) }
+    func getAttackerPlayerIndex() -> Int? { getCurrentPlayerIndex() }
+    func getDefenderPlayerIndex() -> Int? { guard let attackerIndex = getAttackerPlayerIndex() else { return nil }; return (attackerIndex == 0) ? 1 : 0 }
+    func getLocalPlayerIndex() -> Int? {
+        if !isMultiplayer { return 0 }
+        guard let localPlayerName = connectionManager?.currentUsername else { return nil }
+        return gameState.players.firstIndex { $0.name == localPlayerName }
+    }
+    func isLocalPlayerTurn() -> Bool { guard let localPlayerIndex = getLocalPlayerIndex() else { return false }; return gameState.currentPlayerId == gameState.players[localPlayerIndex].id }
+    private func findCardIndex(_ id: UUID, in playerIndex: Int) -> Int? { gameState.players[playerIndex].team.firstIndex(where: { $0.id == id }) }
+    private func findCardOwner(_ id: UUID) -> (card: AnimalCard, playerIndex: Int)? {
+        for (pIndex, player) in gameState.players.enumerated() { if let card = player.team.first(where: { $0.id == id }) { return (card, pIndex) } }
+        return nil
+    }
+    
+    // MARK: - Action & Turn Flow
+    
+    /// **FIXED:** This is the central function for handling player actions. It now correctly
+    /// synchronizes the game state immediately if an action results in a targeting request,
+    /// rather than waiting for the turn to end. This ensures the other player is notified
+    /// that they need to provide input.
+    private func performLocalAction(logic: @escaping () -> Void) {
+        // Guard against actions when it's not the player's turn or an action is already pending.
+        guard !isShowingTurnSummary, isLocalPlayerTurn(), gameState.pendingTargetInfo == nil else { return }
+        
+        recentActionLog.removeAll()
+        logic() // Execute the core game logic (e.g., attack, use power).
+
+        // After the logic runs, check if a targeting request was created.
+        if gameState.pendingTargetInfo != nil {
+            // If yes, the state has changed in a way the opponent needs to know about.
+            // Sync the state immediately so the other player's UI can update to show the targeting prompt.
+            syncGameState()
+        } else {
+            // If no targeting is needed, the action is complete. End the turn normally.
+            endTurn()
+        }
+    }
+    
+    private func endTurn() {
+        if let winner = checkForWinner() {
+            gameState.winner = winner
+            syncGameState()
+            return
+        }
+        
+        let previousPlayerId = gameState.currentPlayerId
+        
+        // Only advance the turn if there isn't a pending action.
+        if gameState.pendingTargetInfo == nil {
+            gameState.currentPlayerId = (gameState.currentPlayerId == 1) ? 2 : 1
+            if gameState.currentPlayerId == 1 { gameState.turnNumber += 1 }
+        }
+        
+        startOfTurnCleanup(forPlayerId: previousPlayerId)
+        syncGameState()
+        isShowingTurnSummary = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { self.isShowingTurnSummary = false }
+    }
+    
+    func selectTarget(cardId: UUID) {
+        guard let targetInfo = gameState.pendingTargetInfo else { return }
+        
+        // Ensure the action is being performed by the correct player.
+        if let localPlayerIndex = getLocalPlayerIndex(), targetInfo.playerIndex == localPlayerIndex {
+            let sourceCard = targetInfo.sourceCard
+            recentActionLog.removeAll()
+            
+            executeTargetedPower(targetInfo.power, with: cardId, by: sourceCard, forPlayer: targetInfo.playerIndex)
+            
+            // Mark Super Power as used if it was one.
+            if targetInfo.power.id >= 200 {
+                if let cardIndex = findCardIndex(sourceCard.id, in: targetInfo.playerIndex) {
+                    gameState.players[targetInfo.playerIndex].team[cardIndex].isSuperPowerUsed = true
+                }
+            }
+            
+            // Clear the pending info and end the turn.
+            gameState.pendingTargetInfo = nil
+            endTurn()
+        }
+    }
+    
+    func cancelTargeting() {
+        if let targetInfo = gameState.pendingTargetInfo {
+            logAction("Targeting for \(targetInfo.power.name) was cancelled.")
+            gameState.pendingTargetInfo = nil
+            endTurn() // End the turn even if targeting is cancelled.
+        }
+    }
+    
+    // MARK: - Player Actions
+    func performAttack() { performLocalAction { self.executeAttackLogic() } }
+    
+    func performSuperPower() {
+        performLocalAction {
+            guard let activeCard = self.currentPlayer?.activeWildkin,
+                  let power = activeCard.superPower,
+                  !activeCard.isSuperPowerUsed,
+                  let playerIndex = self.getCurrentPlayerIndex() else { return }
+            
+            // If the power requires targeting, set up the pendingTargetInfo.
+            // The performLocalAction wrapper will handle syncing the state.
+            if power.effect?.target == "opponent_benched" || power.effect?.target == "any_friendly" {
+                self.gameState.pendingTargetInfo = TargetingInfo(power: power, sourceCard: activeCard, playerIndex: playerIndex)
+            } else {
+                // Otherwise, execute the power directly.
+                self.executePower(power, by: activeCard, forPlayer: playerIndex)
+            }
+        }
+    }
+    
+    func performSwap(with benchedCardId: UUID) {
+        guard let playerIndex = getCurrentPlayerIndex() else { return }
+        performLocalAction {
+            self.executeSwapLogic(with: benchedCardId, forPlayer: playerIndex)
+        }
+    }
+    
+    func concede() {
+        if isMultiplayer { connectionManager?.send(action: .concede) }
+        handleConcession()
+    }
+
+    // MARK: - Game Logic Execution (No changes in this section)
+    private func executeAttackLogic() {
+        guard let attacker = currentPlayer?.activeWildkin else { return }
+        let damage = attacker.strength + attacker.attackBuff
+        applyDamageToActive(damage, from: attacker.id)
+        if let playerIndex = getCurrentPlayerIndex(), let cardIndex = findCardIndex(attacker.id, in: playerIndex) {
+            gameState.players[playerIndex].team[cardIndex].attackBuff = 0
+        }
+    }
+    
+    private func executePower(_ power: Power, by sourceCard: AnimalCard, forPlayer playerIndex: Int) {
+        logAction("\(sourceCard.name) uses \(power.name)!")
+        guard let effect = power.effect else { return }
+        
+        switch effect.type {
+        case "NEGATE_NEXT_DAMAGE":
+            if let i = findCardIndex(sourceCard.id, in: playerIndex) { gameState.players[playerIndex].team[i].isInvincible = true }
+        case "REFLECT_DAMAGE":
+            if let i = findCardIndex(sourceCard.id, in: playerIndex) { gameState.players[playerIndex].team[i].reflectsDamage = effect.value }
+        case "IMMUNE_UNTIL_NEXT_TURN":
+            if let i = findCardIndex(sourceCard.id, in: playerIndex) { gameState.players[playerIndex].team[i].isImmune = true }
+        case "BUFF_ATTACK":
+            let totalDamage = sourceCard.strength + sourceCard.attackBuff + effect.value
+            applyDamageToActive(totalDamage, from: sourceCard.id)
+            if let i = findCardIndex(sourceCard.id, in: playerIndex) { gameState.players[playerIndex].team[i].attackBuff = 0 }
+        case "HEAL":
+            if effect.target == "self" {
+                applyHeal(effect.value, to: sourceCard.id, onPlayer: playerIndex)
+            } else if effect.target == "team" {
+                gameState.players[playerIndex].team.forEach { applyHeal(effect.value, to: $0.id, onPlayer: playerIndex) }
+            }
+        case "ADD_TEMP_SHIELD":
+            if let i = findCardIndex(sourceCard.id, in: playerIndex) { gameState.players[playerIndex].team[i].temporaryShields += effect.value }
+        case "DEAL_DAMAGE":
+            if effect.target == "opponent_active" { applyDamageToActive(effect.value, from: sourceCard.id) }
+        case "BUFF_NEXT_ATTACK":
+            if let i = findCardIndex(sourceCard.id, in: playerIndex) { gameState.players[playerIndex].team[i].attackBuff += effect.value }
+        default:
+            break
+        }
+        
+        if power.id >= 200 {
+            if let i = findCardIndex(sourceCard.id, in: playerIndex) { gameState.players[playerIndex].team[i].isSuperPowerUsed = true }
+        }
+    }
+    
+    private func executeTargetedPower(_ power: Power, with targetId: UUID, by sourceCard: AnimalCard, forPlayer playerIndex: Int) {
+        guard let effect = power.effect else { return }
+        
+        switch effect.type {
+        case "DEAL_DAMAGE_TO_BENCH":
+            let opponentIndex = playerIndex == 0 ? 1 : 0
+            applyDamage(effect.value, to: targetId, onPlayer: opponentIndex, from: sourceCard.id)
+        case "HEAL_SINGLE_TARGET":
+            applyHeal(effect.value, to: targetId, onPlayer: playerIndex)
+        default:
+            break
+        }
+    }
+    
+    private func executeSwapLogic(with benchedCardId: UUID, forPlayer playerIndex: Int) {
+        guard let activeIndex = gameState.players[playerIndex].team.firstIndex(where: { $0.isActive }),
+              let benchedIndex = findCardIndex(benchedCardId, in: playerIndex) else { return }
+        
+        gameState.players[playerIndex].team[activeIndex].isActive = false
+        gameState.players[playerIndex].team[benchedIndex].isActive = true
+        let newActiveCard = gameState.players[playerIndex].team[benchedIndex]
+        logAction("\(gameState.players[playerIndex].name) swaps to \(newActiveCard.name).")
+        
+        // Check for and apply the new card's switch-in ability.
+        applySwitchInPower(of: newActiveCard, forPlayer: playerIndex)
+    }
+    
+    private func applySwitchInPower(of card: AnimalCard, forPlayer playerIndex: Int) {
+        guard let power = card.switchAbility else { return }
+        
+        // This is where the targeting request is generated for the forced swap.
+        if power.effect?.target == "any_friendly" {
+            self.gameState.pendingTargetInfo = TargetingInfo(power: power, sourceCard: card, playerIndex: playerIndex)
+        } else {
+            executePower(power, by: card, forPlayer: playerIndex)
+        }
+    }
+    
+    private func applyDamage(_ amount: Int, to targetId: UUID, onPlayer playerIndex: Int, from attackerId: UUID) {
+        guard let targetCardIndex = findCardIndex(targetId, in: playerIndex), let attackerInfo = findCardOwner(attackerId) else { return }
+        
+        let attacker = attackerInfo.card
+        let targetCard = gameState.players[playerIndex].team[targetCardIndex]
+        
+        if targetCard.isImmune {
+            logAction("\(attacker.name)'s attack has no effect on the immune \(targetCard.name)!")
+            return
+        }
+        if targetCard.isInvincible {
+            logAction("\(attacker.name)'s attack is negated by \(targetCard.name)'s invincibility!")
+            gameState.players[playerIndex].team[targetCardIndex].isInvincible = false
+            return
+        }
+        
+        var incomingDamage = amount
+        if targetCard.reflectsDamage > 0 {
+            let reflectPercent = Double(targetCard.reflectsDamage) / 100.0
+            let reflectedDamage = Int((Double(incomingDamage) * reflectPercent).rounded(.up))
+            incomingDamage -= reflectedDamage
+            logAction("\(targetCard.name) reflects \(reflectedDamage) damage back to \(attacker.name)!")
+            applyDamage(reflectedDamage, to: attackerId, onPlayer: attackerInfo.playerIndex, from: targetId)
+            gameState.players[playerIndex].team[targetCardIndex].reflectsDamage = 0
+        }
+        
+        let totalShields = targetCard.shield + targetCard.temporaryShields
+        let damageToShields = min(incomingDamage, totalShields)
+        if damageToShields > 0 {
+            incomingDamage -= damageToShields
+            logAction("\(targetCard.name)'s shield blocks \(damageToShields) damage!")
+        }
+        
+        let finalDamage = max(0, incomingDamage)
+        gameState.players[playerIndex].team[targetCardIndex].currentHP -= finalDamage
+        
+        let updatedCard = gameState.players[playerIndex].team[targetCardIndex]
+        logAction("\(attacker.name) hits \(targetCard.name) for \(finalDamage) damage! (\(updatedCard.currentHP)/\(updatedCard.stamina) HP)")
+        
+        if updatedCard.isKnockedOut {
+            logAction("\(updatedCard.name) is knocked out!")
+            if updatedCard.isActive {
+                forceSwap(forPlayer: playerIndex)
+            }
+        }
+    }
+    
+    private func applyDamageToActive(_ amount: Int, from attackerId: UUID) {
+        guard let defenderIndex = getDefenderPlayerIndex(), let targetCard = gameState.players[defenderIndex].activeWildkin else { return }
+        applyDamage(amount, to: targetCard.id, onPlayer: defenderIndex, from: attackerId)
+    }
+    
+    private func applyHeal(_ amount: Int, to targetId: UUID, onPlayer playerIndex: Int) {
+        guard let targetIndex = findCardIndex(targetId, in: playerIndex) else { return }
+        let card = gameState.players[playerIndex].team[targetIndex]
+        let maxHP = card.stamina
+        let currentHP = card.currentHP
+        let healedAmount = min(amount, maxHP - currentHP)
+        
+        if healedAmount > 0 {
+            gameState.players[playerIndex].team[targetIndex].currentHP += healedAmount
+            logAction("\(card.name) heals for \(healedAmount) HP!")
+        }
+    }
+
+    private func forceSwap(forPlayer playerIndex: Int) {
+        if let benchedCard = gameState.players[playerIndex].benchedWildkin.first {
+            executeSwapLogic(with: benchedCard.id, forPlayer: playerIndex)
+        }
+    }
+    
+    private func startOfTurnCleanup(forPlayerId playerId: Int) {
+        guard let playerIndex = getPlayerIndex(for: playerId) else { return }
+        for i in 0..<gameState.players[playerIndex].team.count {
+            if gameState.players[playerIndex].team[i].isImmune {
+                logAction("\(gameState.players[playerIndex].team[i].name) is no longer immune.")
+                gameState.players[playerIndex].team[i].isImmune = false
+            }
+            if gameState.players[playerIndex].team[i].temporaryShields > 0 {
+                logAction("\(gameState.players[playerIndex].team[i].name)'s temporary shield fades.")
+                gameState.players[playerIndex].team[i].temporaryShields = 0
+            }
+        }
+    }
+
+    // MARK: - Networking & Syncing
+    private func syncGameState() {
+        if isMultiplayer {
+            connectionManager?.send(action: .syncGameState(gameState))
+        }
+    }
+    
+    private func checkForWinner() -> Player? {
+        if gameState.players[0].hasLost { return gameState.players[1] }
+        if gameState.players[1].hasLost { return gameState.players[0] }
+        return nil
+    }
+    
+    private func handleConcession() {
+        if let localPlayerIndex = getLocalPlayerIndex(), let winner = gameState.players.first(where: { $0.id != gameState.players[localPlayerIndex].id }) {
+            gameState.winner = winner
+            logToMainHistory("\(winner.name) wins by concession!")
+            syncGameState()
+        }
+    }
+    
+    private func logAction(_ message: String) {
+        recentActionLog.append(message)
+        logToMainHistory(message)
+    }
+    
+    private func logToMainHistory(_ message: String) {
+        gameState.gameLog.insert("[\(gameState.turnNumber)] \(message)", at: 0)
+    }
+    
+    private func listenForActions() {
+        connectionManager?.$receivedAction
+            .receive(on: DispatchQueue.main)
+            .compactMap { $0 }
+            .sink { [weak self] action in self?.executeReceivedAction(action) }
+            .store(in: &cancellables)
+    }
+    
+    private func executeReceivedAction(_ action: GameAction) {
+        switch action {
+        case .syncGameState(let receivedGameState):
+            self.gameState = receivedGameState
+            self.recentActionLog = receivedGameState.gameLog.first.map { [$0.replacingOccurrences(of: "[\(receivedGameState.turnNumber)] ", with: "")] } ?? []
+            
+            // Only show the turn summary if there isn't a pending targeting request for the local player.
+            if let targetInfo = receivedGameState.pendingTargetInfo, let localIndex = getLocalPlayerIndex(), targetInfo.playerIndex == localIndex {
+                // This is a targeting request for me, don't show the summary, show the sheet.
+            } else {
+                self.isShowingTurnSummary = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { self.isShowingTurnSummary = false }
+            }
+            
+        case .concede:
+            handleConcession()
+        case .sendTeam:
+            // This action is handled in the TeamSelectionView, not here.
+            break
+        }
+    }
+}
+
+
+
+// FIX: This struct now holds all necessary info for targeting, including the source card.
+//struct TargetingInfo: Identifiable {
+//    let id = UUID()
+//    let power: Power
+//    let sourceCard: AnimalCard
+//    let playerIndex: Int
+//}
+
+
+
+// MARK: - Lobby & Username Views
+
+// The main entry point for the "Battle" tab.
+//
+//  BattleViews.swift
+//  readingApp
+//
+//  Created by Joey Rubin on 7/16/25.
+//
+
+import SwiftUI
+import CoreData
+
+// MARK: - Lobby & Username Views
+
+struct LobbyView: View {
+    @EnvironmentObject var connectionManager: MultipeerConnectionManager
+    @ObservedObject private var usernameManager = UsernameManager.shared
+    @State private var showingUsernameSetup = false
+    @State private var navigateToTeamSelection = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            if connectionManager.isConnected, let peer = connectionManager.connectedPeer {
+                VStack {
+                    Text("Connected!").font(.largeTitle).bold().foregroundColor(.green)
+                    Text("Playing against \(peer.displayName)").font(.headline)
+                    if usernameManager.hasUsername {
+                        Text("You'll play as '\(usernameManager.username)'").font(.subheadline).foregroundColor(.blue).padding(.top, 5)
+                        HStack {
+                            Button("Change Name") { showingUsernameSetup = true }.buttonStyle(ActionButtonStyle(color: .gray))
+                            Button("Select Your Team") { navigateToTeamSelection = true }.buttonStyle(ActionButtonStyle(color: .blue))
+                        }
+                    } else {
+                        Button("Choose Your Battle Name") { showingUsernameSetup = true }.buttonStyle(ActionButtonStyle(color: .blue)).padding(.top)
+                    }
+                }
+            } else {
+                Text("Find an Opponent").font(.largeTitle.bold())
+                if usernameManager.hasUsername {
+                    Text("Playing as '\(usernameManager.username)'").font(.subheadline).foregroundColor(.blue).padding(.bottom, 10)
+                    Button("Change Name") { showingUsernameSetup = true }.buttonStyle(.bordered)
+                }
+                if connectionManager.availablePeers.isEmpty {
+                    VStack(spacing: 15) {
+                        ProgressView(); Text("Searching for players...").foregroundColor(.secondary)
+                        Text("Make sure the other device is on this screen.").font(.caption).foregroundColor(.secondary)
+                    }.padding()
+                } else {
+                    List {
+                        Section(header: Text("Available Players")) {
+                            ForEach(connectionManager.availablePeers.sorted(by: { $0.displayName < $1.displayName }), id: \.self) { peer in
+                                Button(action: {
+                                    if usernameManager.hasUsername { connectionManager.invitePeer(peer) } else { showingUsernameSetup = true }
+                                }) { HStack { Text(peer.displayName); Spacer(); Image(systemName: "gamecontroller.fill") } }
+                                .foregroundColor(.primary)
+                            }
+                        }
+                    }.listStyle(.insetGrouped)
+                }
+            }
+        }
+        .padding()
+        .sheet(isPresented: $showingUsernameSetup) {
+            UsernameSetupView { username in
+                showingUsernameSetup = false
+                if connectionManager.isConnected { navigateToTeamSelection = true }
+            }
+        }
+        .navigationDestination(isPresented: $navigateToTeamSelection) { TeamSelectionView(isMultiplayer: true) }
+        .onAppear {
+            connectionManager.start()
+            if !usernameManager.hasUsername { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { showingUsernameSetup = true } }
+        }
+        .navigationTitle("Battle Lobby")
+    }
+}
+
+struct UsernameSetupView: View {
+    @ObservedObject private var usernameManager = UsernameManager.shared
+    @State private var inputUsername = ""
+    @State private var showingNameTakenAlert = false
+    @EnvironmentObject var connectionManager: MultipeerConnectionManager
+    let onComplete: (String) -> Void
+    private let suggestions = ["Dragon Trainer", "Star Hunter", "Magic Wolf", "Sky Explorer", "Storm Rider", "Fire Guardian"]
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Choose Your Battle Name").font(.largeTitle.bold()).multilineTextAlignment(.center)
+            Text("This name will be shown to other players.").font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Enter your battle name", text: $inputUsername).textFieldStyle(.roundedBorder).font(.title2).autocorrectionDisabled().onSubmit(saveUsername)
+                if inputUsername.isEmpty {
+                    Text("Pick a fun name or try one of these:").font(.caption).foregroundColor(.secondary)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], spacing: 8) {
+                        ForEach(suggestions, id: \.self) { suggestion in
+                            Button(suggestion) { inputUsername = suggestion }.buttonStyle(.bordered).font(.caption)
+                        }
+                    }
+                }
+            }
+            Spacer()
+            Button("Start Playing!", action: saveUsername).buttonStyle(ActionButtonStyle(color: .green)).disabled(inputUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding()
+        .alert("Name Already in Use", isPresented: $showingNameTakenAlert) { Button("Try Again") { } } message: { Text("Another player is already using that name. Please choose a different one!") }
+        .onAppear { if usernameManager.hasUsername { inputUsername = usernameManager.username } }
+    }
+    
+    private func saveUsername() {
+        let trimmedName = inputUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        if let connectedPeer = connectionManager.connectedPeer, trimmedName == connectedPeer.displayName { showingNameTakenAlert = true; return }
+        usernameManager.saveUsername(trimmedName)
+        onComplete(trimmedName)
+    }
+}
+
+// MARK: - Team Selection View
+struct TeamSelectionView: View {
+    @EnvironmentObject var connectionManager: MultipeerConnectionManager
+    @Environment(\.dismiss) private var dismiss
+    @FetchRequest(sortDescriptors: [NSSortDescriptor(keyPath: \Card.timestamp, ascending: false)], animation: .default)
+    private var collectedCards: FetchedResults<Card>
+
+    @State private var playerTeam: Set<AnimalCard> = []
+    @State private var opponentTeamInstances: [AnimalCard]? = nil
+    @State private var teamSize = 2
+    let isMultiplayer: Bool
+    @State private var localPlayerIsReady = false
+    @State private var opponentIsReady = false
+    @State private var matchConfig: MatchConfig?
+    @State private var shouldDismiss = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Picker("Game Mode", selection: $teamSize) { Text("2 vs 2").tag(2); Text("3 vs 3").tag(3) }
+                .pickerStyle(.segmented).disabled(isMultiplayer && localPlayerIsReady)
+                .onChange(of: teamSize) { _ in playerTeam.removeAll() }
+            
+            TeamIconView(team: Array(playerTeam), teamSize: teamSize, title: "Your Team")
+            if isMultiplayer { TeamIconView(team: opponentTeamInstances ?? [], teamSize: teamSize, title: "Opponent's Team") }
+            
+            if collectedCards.isEmpty {
+                Spacer(); Text("No cards in your collection!").font(.title); Text("Go to the Challenges tab to earn some cards first.").font(.headline).foregroundColor(.secondary); Spacer()
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))]) {
+                        ForEach(collectedCards) { cardEntity in
+                            let card = AnimalCard(cardEntity: cardEntity)
+                            Button(action: { toggleSelection(for: card) }) { CardSelectionView(card: card, isSelected: playerTeam.contains(card)) }
+                                .disabled(isMultiplayer && localPlayerIsReady)
+                        }
+                    }
+                }
+            }
+            if isMultiplayer { multiplayerControls }
+        }
+        .padding()
+        .navigationTitle("Build Your Team")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $matchConfig) { config in
+            MatchView(playerTeam: config.playerTeam, opponentTeam: config.opponentTeam, isMultiplayer: config.isMultiplayer, onPlayAgain: {
+                self.matchConfig = nil; if config.isMultiplayer { self.shouldDismiss = true }
+            })
+        }
+        .onChange(of: shouldDismiss) { newValue in if newValue { dismiss() } }
+        .onReceive(connectionManager.$receivedAction) { action in
+            guard isMultiplayer, let action = action else { return }
+            handleReceivedAction(action)
+        }
+    }
+    
+    @ViewBuilder private var multiplayerControls: some View {
+        VStack(spacing: 15) {
+            if opponentIsReady { Text("Opponent is ready!").font(.headline).foregroundColor(.green) }
+            else { Text("Select your team and tap Ready.").font(.headline).foregroundColor(.secondary) }
+            Button(localPlayerIsReady ? "Waiting for Opponent..." : "Ready Up") {
+                localPlayerIsReady = true; connectionManager.send(action: .sendTeam(Array(playerTeam))); checkForMatchStart()
+            }.buttonStyle(ActionButtonStyle(color: localPlayerIsReady ? .gray : .green)).disabled(playerTeam.count != teamSize || localPlayerIsReady)
+        }
+    }
+
+    private func handleReceivedAction(_ action: GameAction) {
+        switch action {
+        case .sendTeam(let receivedTeam): self.opponentTeamInstances = receivedTeam; self.opponentIsReady = true; checkForMatchStart()
+        default: break
+        }
+    }
+
+    private func checkForMatchStart() {
+        guard localPlayerIsReady, opponentIsReady, let opponentTeam = opponentTeamInstances else { return }
+        self.matchConfig = MatchConfig(playerTeam: Array(playerTeam), opponentTeam: opponentTeam, isMultiplayer: true)
+    }
+
+    private func toggleSelection(for card: AnimalCard) {
+        if playerTeam.contains(card) { playerTeam.remove(card) }
+        else if playerTeam.count < teamSize { playerTeam.insert(card) }
+    }
+}
+
+// MARK: - Match & Battle Views
+struct MatchView: View {
+    @StateObject private var matchManager: MatchManager
+    @Environment(\.dismiss) private var dismiss
+    let onPlayAgain: () -> Void
+
+    init(playerTeam: [AnimalCard], opponentTeam: [AnimalCard], isMultiplayer: Bool, onPlayAgain: @escaping () -> Void) {
+        let manager = MatchManager(playerTeam: playerTeam, opponentTeam: opponentTeam, isMultiplayer: isMultiplayer, connectionManager: isMultiplayer ? MultipeerConnectionManager.sharedInstance : nil)
+        _matchManager = StateObject(wrappedValue: manager)
+        self.onPlayAgain = onPlayAgain
+    }
+
+    private var localPlayerTargetingInfo: Binding<TargetingInfo?> {
+        Binding<TargetingInfo?>(
+            get: {
+                guard let targetInfo = matchManager.gameState.pendingTargetInfo,
+                      let localPlayerIndex = matchManager.getLocalPlayerIndex(),
+                      targetInfo.playerIndex == localPlayerIndex else {
+                    return nil
+                }
+                return targetInfo
+            },
+            set: {
+                if $0 == nil {
+                    matchManager.gameState.pendingTargetInfo = nil
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        ZStack {
+            Color(UIColor.systemGroupedBackground).ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 16) {
+                    PlayerView(player: opponentPlayer, isCurrentPlayer: matchManager.gameState.currentPlayerId == opponentPlayer.id, isLocalPlayer: false)
+                    Divider()
+                    PlayerView(player: localPlayer, isCurrentPlayer: matchManager.gameState.currentPlayerId == localPlayer.id, isLocalPlayer: true)
+                    if !matchManager.gameState.isGameOver { ActionButtonsView(matchManager: matchManager) }
+                    else { EndGameView(winner: matchManager.gameState.winner, onPlayAgain: self.onPlayAgain) }
+                    GameLogView(log: matchManager.gameState.gameLog)
+                }.padding()
+            }
+            .blur(radius: matchManager.isShowingTurnSummary || matchManager.gameState.pendingTargetInfo != nil ? 3 : 0)
+            .disabled(matchManager.gameState.pendingTargetInfo != nil)
+            
+            if matchManager.isShowingTurnSummary { TurnSummaryView(log: matchManager.recentActionLog) }
+            
+            if let targetInfo = matchManager.gameState.pendingTargetInfo,
+               let localPlayerIndex = matchManager.getLocalPlayerIndex(),
+               targetInfo.playerIndex != localPlayerIndex {
+                VStack {
+                    Text("Waiting for \(opponentPlayer.name) to select a target...")
+                        .font(.headline).padding().background(.regularMaterial)
+                        .cornerRadius(12).shadow(radius: 5)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black.opacity(0.1))
+                .transition(.opacity)
+            }
+        }
+        .animation(.default, value: matchManager.gameState)
+        .animation(.easeInOut, value: matchManager.isShowingTurnSummary)
+        .navigationBarBackButtonHidden(true)
+        .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button("Concede") { matchManager.concede(); dismiss() }.foregroundColor(.red) } }
+        .sheet(item: localPlayerTargetingInfo, onDismiss: {
+            if matchManager.gameState.pendingTargetInfo != nil {
+                matchManager.cancelTargeting()
+            }
+        }) { targetInfo in
+            TargetSelectionSheet(matchManager: matchManager, targetInfo: targetInfo)
+        }
+    }
+    
+    private var localPlayer: Player {
+        guard let index = matchManager.getLocalPlayerIndex(), matchManager.gameState.players.indices.contains(index) else { return matchManager.gameState.players.first! }
+        return matchManager.gameState.players[index]
+    }
+    private var opponentPlayer: Player {
+        guard let index = matchManager.getLocalPlayerIndex(), matchManager.gameState.players.indices.contains(index) else { return matchManager.gameState.players.last! }
+        return matchManager.gameState.players[index == 0 ? 1 : 0]
+    }
+}
+
+struct PlayerView: View {
+    let player: Player
+    let isCurrentPlayer: Bool
+    let isLocalPlayer: Bool
+    @State private var selectedCard: AnimalCard?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack { Text(player.name).font(.headline); if isLocalPlayer { Text("(You)").font(.caption).foregroundColor(.blue) } }.opacity(isCurrentPlayer ? 1.0 : 0.6)
+            HStack(alignment: .top, spacing: 16) {
+                if let active = player.activeWildkin { Button(action: { selectedCard = active }) { BattleCardView(card: active, isActive: true) }.buttonStyle(.plain) }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: -20) {
+                        ForEach(player.benchedWildkin) { card in Button(action: { selectedCard = card }) { BattleCardView(card: card, isActive: false) }.buttonStyle(.plain) }
+                    }.padding(.leading, 20)
+                }
+            }
+        }
+        .padding(12).background(Color(UIColor.secondarySystemGroupedBackground)).cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(isCurrentPlayer ? Color.blue : Color.clear, lineWidth: 3))
+        .sheet(item: $selectedCard) { card in CardDetailView(card: card, onDismiss: { selectedCard = nil }) }
+    }
+}
+
+struct BattleCardView: View {
+    let card: AnimalCard
+    let isActive: Bool
+    private let cardAspectRatio: CGFloat = 2.5 / 3.5
+    private var cardWidth: CGFloat { 140.0 }
+
+    var body: some View {
+        ZStack {
+            Image(card.imageName).resizable().scaledToFill()
+            VStack { Spacer(); LinearGradient(gradient: Gradient(colors: [.clear, .black.opacity(0.8)]), startPoint: .top, endPoint: .bottom).frame(height: cardWidth * 0.7) }
+            VStack {
+                Spacer()
+                VStack(spacing: 4) {
+                    Text("HP: \(card.currentHP)/\(card.stamina)").font(.caption.bold())
+                    ProgressView(value: Double(card.currentHP), total: Double(card.stamina)).tint(progressColor)
+                    Text("💥 \(card.strength) | 🛡️ \(card.shield + card.temporaryShields)").font(.caption).bold()
+                }.padding(8).background(.black.opacity(0.5)).cornerRadius(8).foregroundColor(.white)
+            }.padding(8)
+            
+            VStack {
+                HStack {
+                    VStack(spacing: 4) {
+                        if card.isSuperPowerUsed { Image(systemName: "star.slash.fill").foregroundColor(.gray) }
+                        if card.isImmune { Image(systemName: "eye.slash.fill").foregroundColor(.purple) }
+                        if card.isInvincible { Image(systemName: "shield.checkered").foregroundColor(.yellow) }
+                        if card.reflectsDamage > 0 { Image(systemName: "arrow.left.arrow.right.circle.fill").foregroundColor(.orange) }
+                    }
+                    .font(.caption.bold()).padding(6).background(Color.black.opacity(0.6)).clipShape(Capsule())
+                    Spacer()
+                }
+                Spacer()
+            }.padding(8)
+        }
+        .frame(width: cardWidth, height: cardWidth / cardAspectRatio)
+        .background(Color(UIColor.secondarySystemGroupedBackground)).cornerRadius(12).shadow(color: .black.opacity(0.2), radius: 5, y: 3)
+        .opacity(card.isKnockedOut ? 0.5 : 1.0).overlay(card.isKnockedOut ? Text("KO").font(.largeTitle.bold()).foregroundColor(.red.opacity(0.8)) : nil)
+        .scaleEffect(isActive ? 1.0 : 0.95).offset(y: isActive ? 0 : 10)
+    }
+    
+    private var progressColor: Color {
+        let ratio = Double(card.currentHP) / Double(card.stamina)
+        if ratio > 0.5 { return .green }
+        if ratio > 0.2 { return .orange }
+        return .red
+    }
+}
+
+// MARK: - Helper Views for Battle
+struct ActionButtonsView: View {
+    @ObservedObject var matchManager: MatchManager
+    @State private var showSwapSheet = false
+    
+    private var isPlayerTurn: Bool { !matchManager.isShowingTurnSummary && matchManager.isLocalPlayerTurn() && matchManager.gameState.pendingTargetInfo == nil }
+    private var localPlayer: Player? { guard let index = matchManager.getLocalPlayerIndex() else { return nil }; return matchManager.gameState.players[index] }
+    private var canSwap: Bool { (localPlayer?.benchedWildkin.count ?? 0) > 0 }
+    private var canUseSuper: Bool { !(localPlayer?.activeWildkin?.isSuperPowerUsed ?? true) }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Button(action: { matchManager.performAttack() }) { Label("Attack", systemImage: "bolt.fill") }.buttonStyle(ActionButtonStyle())
+                Button(action: { showSwapSheet = true }) { Label("Swap", systemImage: "arrow.triangle.2.circlepath") }.buttonStyle(ActionButtonStyle(color: .orange)).disabled(!canSwap)
+                Button(action: { matchManager.performSuperPower() }) { Label("Super", systemImage: "star.fill") }.buttonStyle(ActionButtonStyle(color: .purple)).disabled(!canUseSuper)
+            }
+            .disabled(!isPlayerTurn).opacity(isPlayerTurn ? 1.0 : 0.6)
+        }
+        .sheet(isPresented: $showSwapSheet) {
+            if let benched = localPlayer?.benchedWildkin {
+                SwapSelectionSheet(benchedCards: benched) { selectedId in matchManager.performSwap(with: selectedId); showSwapSheet = false }
+            }
+        }
+    }
+}
+
+struct SwapSelectionSheet: View {
+    let benchedCards: [AnimalCard]
+    let onSelect: (UUID) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 15) {
+            Text("Swap To...").font(.largeTitle.bold()).padding()
+            ForEach(benchedCards) { card in
+                Button(action: { onSelect(card.id) }) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack { Image(systemName: "pawprint.fill"); Text(card.name).font(.title2.bold()); Spacer(); Text("❤️\(card.currentHP)/\(card.stamina)") }
+                        if let switchAbility = card.switchAbility { Text("\(switchAbility.name):").font(.headline); Text(switchAbility.description).font(.caption).foregroundColor(.secondary) }
+                    }.padding().frame(maxWidth: .infinity).background(Color(UIColor.secondarySystemGroupedBackground)).cornerRadius(12)
+                }.buttonStyle(.plain)
+            }
+            Spacer()
+            Button("Cancel") { dismiss() }.padding()
+        }.padding()
+    }
+}
+
+struct TargetSelectionSheet: View {
+    @ObservedObject var matchManager: MatchManager
+    let targetInfo: TargetingInfo
+    private var power: Power { targetInfo.power }
+
+    var body: some View {
+        VStack(spacing: 15) {
+            Text("Select Target for \(power.name)").font(.largeTitle.bold()).padding()
+            Text(power.description).font(.headline).foregroundColor(.secondary)
+            
+            let targets = getTargetCards()
+            ForEach(targets) { card in
+                Button(action: { matchManager.selectTarget(cardId: card.id) }) {
+                    HStack {
+                        Image(systemName: "pawprint.fill"); Text(card.name).font(.title2.bold()); Spacer(); Text("❤️\(card.currentHP)/\(card.stamina)")
+                    }.padding().frame(maxWidth: .infinity).background(Color(UIColor.secondarySystemGroupedBackground)).cornerRadius(12)
+                }.buttonStyle(.plain)
+            }
+            
+            Spacer()
+            Button("Cancel") { matchManager.cancelTargeting() }
+                .buttonStyle(ActionButtonStyle(color: .gray))
+                .padding(.horizontal)
+
+        }.padding()
+    }
+    
+    private func getTargetCards() -> [AnimalCard] {
+        guard let effectTarget = power.effect?.target else { return [] }
+        switch effectTarget {
+        case "opponent_benched":
+            let opponentIndex = targetInfo.playerIndex == 0 ? 1 : 0
+            return matchManager.gameState.players[opponentIndex].benchedWildkin
+        case "any_friendly":
+            return matchManager.gameState.players[targetInfo.playerIndex].team.filter { !$0.isKnockedOut }
+        default:
+            return []
+        }
+    }
+}
+
+struct GameLogView: View {
+    let log: [String]
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("Game Log").font(.headline)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(log.indices, id: \.self) { index in Text(log[index]).font(.caption).frame(maxWidth: .infinity, alignment: .leading).id(index) }
+                    }.padding(8)
+                }.onChange(of: log) { proxy.scrollTo(0, anchor: .top) }
+            }
+        }.frame(height: 150).background(Color(UIColor.secondarySystemGroupedBackground)).cornerRadius(16)
+    }
+}
+
+struct EndGameView: View {
+    let winner: Player?
+    let onPlayAgain: () -> Void
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Game Over!").font(.largeTitle.bold())
+            if let winner = winner { Text("\(winner.name) is the winner!").font(.title2) }
+            Button(action: onPlayAgain) { Label("New Game", systemImage: "arrow.clockwise") }.buttonStyle(ActionButtonStyle(color: .green))
+        }.padding()
+    }
+}
+
+struct TurnSummaryView: View {
+    let log: [String]
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(log, id: \.self) { message in Text(message).font(.headline).multilineTextAlignment(.center) }
+        }.padding(20).background(.regularMaterial).cornerRadius(20).shadow(radius: 10).transition(.scale.combined(with: .opacity))
+    }
+}
+
+// MARK: - General Helper Views & Styles
+struct ActionButtonStyle: ButtonStyle {
+    var color: Color = .blue
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.headline.weight(.semibold)).foregroundColor(.white).padding().frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 12).fill(color).shadow(color: color.opacity(0.4), radius: configuration.isPressed ? 0 : 5, y: configuration.isPressed ? 0 : 5))
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0).animation(.spring(), value: configuration.isPressed)
+    }
+}
+
+struct TeamIconView: View {
+    let team: [AnimalCard]
+    let teamSize: Int
+    let title: String
+    var body: some View {
+        VStack {
+            Text(title).font(.title2.bold())
+            HStack {
+                ForEach(0..<teamSize, id: \.self) { index in
+                    if index < team.count { Image(systemName: "pawprint.circle.fill").font(.title).frame(width: 50, height: 50).background(Color.gray.opacity(0.2)).clipShape(Circle()) }
+                    else { Circle().strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [5])).foregroundColor(.gray.opacity(0.5)).frame(width: 50, height: 50) }
+                }
+            }
+        }.frame(height: 80)
+    }
+}
+
+struct CardSelectionView: View {
+    let card: AnimalCard
+    let isSelected: Bool
+    var body: some View {
+        VStack { AnimalCardView(card: card).aspectRatio(2.5/3.5, contentMode: .fit) }
+            .padding(4).background(isSelected ? Color.blue.opacity(0.3) : Color.clear).cornerRadius(16)
     }
 }
