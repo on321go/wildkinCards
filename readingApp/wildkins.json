@@ -52,6 +52,51 @@
     "strength": 3,
     "shield": 1,
     "speed": 5
+  },
+  {
+    "id": 7,
+    "name": "Unicorn",
+    "archetype": "Striker",
+    "stamina": 12,
+    "strength": 4,
+    "shield": 0,
+    "speed": 5
+  },
+  {
+    "id": 8,
+    "name": "Unikitty",
+    "archetype": "Guardian",
+    "stamina": 15,
+    "strength": 3,
+    "shield": 1,
+    "speed": 5
+  },
+  {
+    "id": 9,
+    "name": "Capibara",
+    "archetype": "Supporter",
+    "stamina": 12,
+    "strength": 2,
+    "shield": 1,
+    "speed": 6
+  },
+  {
+    "id": 10,
+    "name": "Dragon",
+    "archetype": "Supporter",
+    "stamina": 15,
+    "strength": 3,
+    "shield": 1,
+    "speed": 6
+  },
+  {
+    "id": 11,
+    "name": "Dungbeetle",
+    "archetype": "Striker",
+    "stamina": 12,
+    "strength": 3,
+    "shield": 1,
+    "speed": 5
   }
 ]
 

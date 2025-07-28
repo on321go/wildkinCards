@@ -1827,10 +1827,6 @@ class MatchManager: ObservableObject {
     
     // MARK: - Action & Turn Flow
     
-    /// **FIXED:** This is the central function for handling player actions. It now correctly
-    /// synchronizes the game state immediately if an action results in a targeting request,
-    /// rather than waiting for the turn to end. This ensures the other player is notified
-    /// that they need to provide input.
     private func performLocalAction(logic: @escaping () -> Void) {
         // Guard against actions when it's not the player's turn or an action is already pending.
         guard !isShowingTurnSummary, isLocalPlayerTurn(), gameState.pendingTargetInfo == nil else { return }
@@ -1856,15 +1852,15 @@ class MatchManager: ObservableObject {
             return
         }
         
-        let previousPlayerId = gameState.currentPlayerId
-        
         // Only advance the turn if there isn't a pending action.
         if gameState.pendingTargetInfo == nil {
             gameState.currentPlayerId = (gameState.currentPlayerId == 1) ? 2 : 1
             if gameState.currentPlayerId == 1 { gameState.turnNumber += 1 }
         }
         
-        startOfTurnCleanup(forPlayerId: previousPlayerId)
+        // This is the crucial change. Cleanup now happens for the new current player.
+        startOfTurnCleanup(forPlayerId: gameState.currentPlayerId)
+        
         syncGameState()
         isShowingTurnSummary = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { self.isShowingTurnSummary = false }
@@ -1934,7 +1930,7 @@ class MatchManager: ObservableObject {
         handleConcession()
     }
 
-    // MARK: - Game Logic Execution (No changes in this section)
+    // MARK: - Game Logic Execution
     private func executeAttackLogic() {
         guard let attacker = currentPlayer?.activeWildkin else { return }
         let damage = attacker.strength + attacker.attackBuff
@@ -2044,7 +2040,13 @@ class MatchManager: ObservableObject {
             gameState.players[playerIndex].team[targetCardIndex].reflectsDamage = 0
         }
         
-        let totalShields = targetCard.shield + targetCard.temporaryShields
+        // **FIX 1:** Shield logic updated for Tier 1.
+        // TIER 2 LOGIC: In the next tier, base shields will also block damage.
+        // let totalShields = targetCard.shield + targetCard.temporaryShields
+        
+        // TIER 1 LOGIC: Only temporary shields from powers (like Rock Wall) block damage.
+        let totalShields = targetCard.temporaryShields
+        
         let damageToShields = min(incomingDamage, totalShields)
         if damageToShields > 0 {
             incomingDamage -= damageToShields
@@ -2490,6 +2492,11 @@ struct BattleCardView: View {
     let isActive: Bool
     private let cardAspectRatio: CGFloat = 2.5 / 3.5
     private var cardWidth: CGFloat { 140.0 }
+    
+    // **FIX 2:** This computed property determines if any status icons should be shown.
+    private var hasStatusEffects: Bool {
+        card.isSuperPowerUsed || card.isImmune || card.isInvincible || card.reflectsDamage > 0
+    }
 
     var body: some View {
         ZStack {
@@ -2506,14 +2513,21 @@ struct BattleCardView: View {
             
             VStack {
                 HStack {
-                    VStack(spacing: 4) {
-                        if card.isSuperPowerUsed { Image(systemName: "star.slash.fill").foregroundColor(.gray) }
-                        if card.isImmune { Image(systemName: "eye.slash.fill").foregroundColor(.purple) }
-                        if card.isInvincible { Image(systemName: "shield.checkered").foregroundColor(.yellow) }
-                        if card.reflectsDamage > 0 { Image(systemName: "arrow.left.arrow.right.circle.fill").foregroundColor(.orange) }
-                    }
-                    .font(.caption.bold()).padding(6).background(Color.black.opacity(0.6)).clipShape(Capsule())
                     Spacer()
+                    // **FIX 2:** The status icon container now only appears if `hasStatusEffects` is true,
+                    // preventing the empty black circle from showing up.
+                    if hasStatusEffects {
+                        VStack(spacing: 4) {
+                            if card.isSuperPowerUsed { Image(systemName: "star.slash.fill").foregroundColor(.yellow) }
+                            if card.isImmune { Image(systemName: "eye.slash.fill").foregroundColor(.purple) }
+                            if card.isInvincible { Image(systemName: "shield.checkered").foregroundColor(.white) }
+                            if card.reflectsDamage > 0 { Image(systemName: "arrow.left.arrow.right.circle.fill").foregroundColor(.orange) }
+                        }
+                        .font(.caption.bold())
+                        .padding(6)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Capsule())
+                    }
                 }
                 Spacer()
             }.padding(8)
