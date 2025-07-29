@@ -143,6 +143,7 @@ class AppManager: ObservableObject {
         var assignedSuperPower: Power?
         var assignedSwitchAbility: Power?
 
+        // **MODIFIED:** Added the "Wild" case to pull from the global power pools.
         switch baseAnimal.archetype {
         case "Guardian":
             assignedSuperPower = guardianSuperPowers.randomElement()
@@ -153,6 +154,10 @@ class AppManager: ObservableObject {
         case "Supporter":
             assignedSuperPower = supporterSuperPowers.randomElement()
             assignedSwitchAbility = supporterSwitchAbilities.randomElement()
+        case "Wild":
+            // "Wild" cards can get any ability from the main pools.
+            assignedSuperPower = superPowerPool.randomElement()
+            assignedSwitchAbility = switchAbilityPool.randomElement()
         default: break
         }
         
@@ -198,6 +203,25 @@ class AppManager: ObservableObject {
         } catch {
             let nsError = error as NSError
             fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+        }
+    }
+    
+    /// Deletes a set of cards from Core Data and grants the user one new card draw.
+    func performTrade(for cardsToDelete: Set<Card>) {
+        guard cardsToDelete.count == 3 else { return }
+        
+        cardsToDelete.forEach(viewContext.delete)
+        
+        do {
+            try viewContext.save()
+            // Grant one new card for the trade
+            newCardsEarned += 1
+            // Use the existing alert to notify the user
+            showCardEarnedAlert = true
+        } catch {
+            let nsError = error as NSError
+            // In a production app, this should be handled more gracefully (e.g., show an error alert).
+            fatalError("Unresolved error during trade \(nsError), \(nsError.userInfo)")
         }
     }
     
@@ -1007,11 +1031,12 @@ struct AnimalCard: Identifiable, Equatable, Hashable, Codable {
     }
     
     var imageName: String {
-        switch rarity {
-        case .epic: return name.lowercased() + "Epic"
-        case .normal, .rare: return name.lowercased()
-        }
-    }
+         let baseName = name.lowercased()
+         switch rarity {
+         case .epic: return baseName + "Epic"
+         case .normal, .rare: return baseName
+         }
+     }
     
     var rarityColor: Color {
         switch rarity {
@@ -1027,7 +1052,6 @@ struct CardCollectionView: View {
     @EnvironmentObject var appManager: AppManager
     @Environment(\.managedObjectContext) private var viewContext
 
-    // Fetch cards from Core Data and sort them by timestamp
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Card.timestamp, ascending: true)],
         animation: .default)
@@ -1035,7 +1059,8 @@ struct CardCollectionView: View {
     
     @State private var showFireworks = false
     @State private var selectedCard: AnimalCard? = nil
-    
+    @State private var showingTradeView = false // State to present the trade-in sheet
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -1050,14 +1075,26 @@ struct CardCollectionView: View {
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .padding(.top, 40)
-                
+                    .padding(.bottom, 10)
+
+                // **NEW:** Button to initiate the card trade-in flow.
+                Button(action: { showingTradeView = true }) {
+                    Label("Trade 3 Cards for a New One", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(12)
+                        .background(cards.count < 3 ? Color.gray.gradient : Color.green.gradient)
+                        .cornerRadius(12)
+                        .shadow(radius: 5)
+                }
+                .disabled(cards.count < 3)
+                .padding(.bottom, 10)
+
                 unwrappingZone.frame(maxHeight: .infinity)
                 
-                // Pass the fetched Core Data results to the grid view
                 CollectedCardsGridView(
-                    cards: cards, // Use the @FetchRequest result
+                    cards: cards,
                     onCardTapped: { cardEntity in
-                        // Convert the Core Data entity to a displayable struct
                         withAnimation(.spring()) { selectedCard = AnimalCard(cardEntity: cardEntity) }
                     }
                 )
@@ -1072,6 +1109,11 @@ struct CardCollectionView: View {
                     withAnimation(.easeOut) { selectedCard = nil }
                 })
             }
+        }
+        // **NEW:** Sheet presentation for the TradeView.
+        .sheet(isPresented: $showingTradeView) {
+            TradeView(allCards: cards)
+                .environmentObject(appManager)
         }
     }
     
@@ -1256,9 +1298,11 @@ struct AnimalCardView: View {
 }
 
 struct CollectedCardsGridView: View {
-    // This view now accepts FetchedResults<Card> directly
     let cards: FetchedResults<Card>
     let onCardTapped: (Card) -> Void
+    
+    // **MODIFIED:** Added an environment variable to detect the device's size class (e.g., iPhone vs. iPad).
+    @Environment(\.horizontalSizeClass) var horizontalSizeClass
     
     private let columns: [GridItem] = Array(repeating: .init(.flexible()), count: 3)
     
@@ -1272,7 +1316,6 @@ struct CollectedCardsGridView: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 15) {
                     ForEach(cards) { cardEntity in
-                        // Convert the Core Data entity to a displayable struct for the view
                         AnimalCardView(card: AnimalCard(cardEntity: cardEntity))
                             .aspectRatio(2.5/3.5, contentMode: .fit)
                             .id(cardEntity.id)
@@ -1282,7 +1325,9 @@ struct CollectedCardsGridView: View {
                 .padding()
             }
         }
-        .frame(height: 300)
+        // **MODIFIED:** The frame height is now responsive. It's taller on iPads (.regular size class)
+        // and keeps the original height on iPhones (.compact size class).
+        .frame(height: horizontalSizeClass == .compact ? 300 : 450)
         .background(Color.black.opacity(0.2))
         .cornerRadius(20, corners: [.topLeft, .topRight])
     }
@@ -2706,5 +2751,98 @@ struct CardSelectionView: View {
     var body: some View {
         VStack { AnimalCardView(card: card).aspectRatio(2.5/3.5, contentMode: .fit) }
             .padding(4).background(isSelected ? Color.blue.opacity(0.3) : Color.clear).cornerRadius(16)
+    }
+}
+
+// MARK: - Trade-In View
+/// **NEW:** A view presented as a sheet to handle the card trading process.
+struct TradeView: View {
+    @EnvironmentObject var appManager: AppManager
+    @Environment(\.dismiss) private var dismiss
+    
+    let allCards: FetchedResults<Card>
+    @State private var selectedCardsForTrade: Set<Card> = []
+    
+    private let columns: [GridItem] = Array(repeating: .init(.flexible()), count: 3)
+    
+    private var canTrade: Bool {
+        selectedCardsForTrade.count == 3
+    }
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 10) {
+                Text("Select 3 Cards to Trade")
+                    .font(.title.bold())
+                    .padding(.top)
+                
+                Text("Traded cards will be permanently removed. You will receive one new random card in return.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 15) {
+                        ForEach(allCards) { cardEntity in
+                            let isSelected = selectedCardsForTrade.contains(cardEntity)
+                            Button(action: {
+                                toggleSelection(for: cardEntity)
+                            }) {
+                                AnimalCardView(card: AnimalCard(cardEntity: cardEntity))
+                                    .aspectRatio(2.5/3.5, contentMode: .fit)
+                                    .padding(4)
+                                    .background(isSelected ? Color.blue.opacity(0.4) : Color.clear)
+                                    .cornerRadius(16)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 4)
+                                    )
+                                    .overlay(
+                                        isSelected ?
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.largeTitle)
+                                            .foregroundColor(.white)
+                                            .background(Circle().fill(Color.blue))
+                                            .position(x: 30, y: 30)
+                                            .shadow(radius: 3)
+                                        : nil
+                                    )
+                            }
+                        }
+                    }
+                    .padding()
+                }
+                
+                Button(action: {
+                    appManager.performTrade(for: selectedCardsForTrade)
+                    dismiss()
+                }) {
+                    Text("Trade \(selectedCardsForTrade.count)/3 Cards")
+                        .font(.title2.bold())
+                        .foregroundColor(.white)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(canTrade ? Color.green.gradient : Color.gray.gradient)
+                        .cornerRadius(15)
+                }
+                .disabled(!canTrade)
+                .padding()
+            }
+            .navigationBarTitle("Card Trade-In", displayMode: .inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+    
+    private func toggleSelection(for card: Card) {
+        if selectedCardsForTrade.contains(card) {
+            selectedCardsForTrade.remove(card)
+        } else if selectedCardsForTrade.count < 3 {
+            selectedCardsForTrade.insert(card)
+        }
     }
 }

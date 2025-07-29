@@ -91,12 +91,93 @@
   },
   {
     "id": 11,
-    "name": "Dungbeetle",
+    "name": "Dung_beetle",
     "archetype": "Striker",
     "stamina": 12,
     "strength": 3,
     "shield": 1,
     "speed": 5
+  },
+  {
+    "id": 12,
+    "name": "Polar_bear",
+    "archetype": "Guardian",
+    "stamina": 18,
+    "strength": 3,
+    "shield": 1,
+    "speed": 2
+  },
+  {
+    "id": 13,
+    "name": "Rock_golem",
+    "archetype": "Wild",
+    "stamina": 13,
+    "strength": 4,
+    "shield": 2,
+    "speed": 4
+  },
+  {
+    "id": 14,
+    "name": "Bumble_bee",
+    "archetype": "Striker",
+    "stamina": 8,
+    "strength": 6,
+    "shield": 0,
+    "speed": 8
+  },
+  {
+    "id": 15,
+    "name": "Gorilla",
+    "archetype": "Striker",
+    "stamina": 12,
+    "strength": 4,
+    "shield": 0,
+    "speed": 6
+  },
+  {
+    "id": 16,
+    "name": "Elephant",
+    "archetype": "Guardian",
+    "stamina": 17,
+    "strength": 2,
+    "shield": 2,
+    "speed": 2
+  },
+  {
+    "id": 17,
+    "name": "Red_panda_anime",
+    "archetype": "Striker",
+    "stamina": 14,
+    "strength": 3,
+    "shield": 0,
+    "speed": 6
+  },
+  {
+    "id": 18,
+    "name": "Red_panda",
+    "archetype": "Striker",
+    "stamina": 14,
+    "strength": 3,
+    "shield": 0,
+    "speed": 6
+  },
+  {
+    "id": 19,
+    "name": "Turtle",
+    "archetype": "Guardian",
+    "stamina": 17,
+    "strength": 2,
+    "shield": 2,
+    "speed": 2
+  },
+  {
+    "id": 20,
+    "name": "Monster_tree",
+    "archetype": "Wild",
+    "stamina": 15,
+    "strength": 3,
+    "shield": 2,
+    "speed": 2
   }
 ]
 
