@@ -111,7 +111,7 @@
     "id": 13,
     "name": "Rock_golem",
     "archetype": "Wild",
-    "stamina": 13,
+    "stamina": 15,
     "strength": 4,
     "shield": 2,
     "speed": 4
@@ -178,6 +178,114 @@
     "strength": 3,
     "shield": 2,
     "speed": 2
+  },
+  {
+    "id": 21,
+    "name": "Crab",
+    "archetype": "Striker",
+    "stamina": 14,
+    "strength": 4,
+    "shield": 1,
+    "speed": 2
+  },
+  {
+    "id": 22,
+    "name": "Flamingo",
+    "archetype": "Striker",
+    "stamina": 10,
+    "strength": 5,
+    "shield": 0,
+    "speed": 7
+  },
+  {
+    "id": 23,
+    "name": "Gator",
+    "archetype": "Striker",
+    "stamina": 14,
+    "strength": 4,
+    "shield": 1,
+    "speed": 2
+  },
+  {
+    "id": 24,
+    "name": "Girrafe",
+    "archetype": "Striker",
+    "stamina": 15,
+    "strength": 3,
+    "shield": 0,
+    "speed": 4
+  },
+  {
+    "id": 25,
+    "name": "Jelly_fish",
+    "archetype": "Supporter",
+    "stamina": 12,
+    "strength": 2,
+    "shield": 1,
+    "speed": 6
+  },
+  {
+    "id": 26,
+    "name": "Lion",
+    "archetype": "Striker",
+    "stamina": 15,
+    "strength": 4,
+    "shield": 0,
+    "speed": 3
+  },
+  {
+    "id": 27,
+    "name": "Panther",
+    "archetype": "Striker",
+    "stamina": 13,
+    "strength": 4,
+    "shield": 0,
+    "speed": 6
+  },
+  {
+    "id": 28,
+    "name": "Rhino",
+    "archetype": "Guardian",
+    "stamina": 17,
+    "strength": 3,
+    "shield": 1,
+    "speed": 2
+  },
+  {
+    "id": 29,
+    "name": "Shark",
+    "archetype": "Striker",
+    "stamina": 14,
+    "strength": 5,
+    "shield": 0,
+    "speed": 5
+  },
+  {
+    "id": 30,
+    "name": "Sloth",
+    "archetype": "Striker",
+    "stamina": 17,
+    "strength": 3,
+    "shield": 0,
+    "speed": 1
+  },
+  {
+    "id": 31,
+    "name": "Snake",
+    "archetype": "Striker",
+    "stamina": 12,
+    "strength": 5,
+    "shield": 0,
+    "speed": 5
+  },
+  {
+    "id": 32,
+    "name": "Tiger",
+    "archetype": "Striker",
+    "stamina": 15,
+    "strength": 4,
+    "shield": 0,
+    "speed": 5
   }
 ]
 

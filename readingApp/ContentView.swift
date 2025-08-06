@@ -27,7 +27,96 @@ struct PersistenceController {
         })
         // Automatically merge changes from other contexts (like background updates from iCloud).
         container.viewContext.automaticallyMergesChangesFromParent = true
+        
+        // **NEW:** This block adds all cards to the collection for testing,
+        // but only when you run the app in Xcode's Debug mode.
+        // It will be completely removed from the final App Store version.
+        #if DEBUG
+        Self.createAllCardsForTesting(context: container.viewContext)
+        #endif
     }
+    
+    // **NEW:** This function populates Core Data with every possible card.
+        // It checks a flag in UserDefaults to ensure it only runs once per installation.
+        static func createAllCardsForTesting(context: NSManagedObjectContext) {
+            let defaults = UserDefaults.standard
+            guard !defaults.bool(forKey: "didAddAllDevCards") else {
+                return
+            }
+
+            print("--- DEV MODE: Creating all cards for testing ---")
+
+            // Load all available Wildkin data from the JSON files.
+            let wildkins: [WildkinData] = DataManager.load("wildkins.json")
+            let watercolorWildkins: [WildkinData] = DataManager.load("watercolor_wildkins.json")
+            let allWildkins = wildkins + watercolorWildkins
+
+            let dataManager = DataManager.shared
+
+            for wildkinData in allWildkins {
+                let isWatercolor = watercolorWildkins.contains(where: { $0.id == wildkinData.id })
+                
+                // Create Normal, Rare, and Epic for standard cards; only Epic for Watercolor.
+                let raritiesToCreate: [Rarity] = isWatercolor ? [.epic] : [.normal, .rare, .epic]
+
+                for rarity in raritiesToCreate {
+                    let cardEntity = Card(context: context)
+                    cardEntity.id = UUID()
+                    cardEntity.name = wildkinData.name
+                    cardEntity.archetype = wildkinData.archetype
+                    cardEntity.rarity = rarity.rawValue
+                    
+                    var finalStamina = wildkinData.stamina
+                    var finalStrength = wildkinData.strength
+                    
+                    switch rarity {
+                    case .rare: finalStamina += 1
+                    case .epic: finalStamina += 2; finalStrength += 1
+                    case .normal: break
+                    }
+                    
+                    cardEntity.stamina = Int16(finalStamina)
+                    cardEntity.strength = Int16(finalStrength)
+                    cardEntity.shield = Int16(wildkinData.shield)
+                    cardEntity.speed = Int16(wildkinData.speed)
+                    
+                    // Assign powers using the same logic as AppManager
+                    var assignedSuperPower: Power?
+                    var assignedSwitchAbility: Power?
+                    
+                    switch wildkinData.archetype {
+                    case "Guardian":
+                        assignedSuperPower = dataManager.superPowers.filter { [201, 202, 203].contains($0.id) }.randomElement()
+                        assignedSwitchAbility = dataManager.switchAbilities.filter { [101, 102].contains($0.id) }.randomElement()
+                    case "Striker":
+                        assignedSuperPower = dataManager.superPowers.filter { [204, 205].contains($0.id) }.randomElement()
+                        assignedSwitchAbility = dataManager.switchAbilities.filter { [103, 104, 105].contains($0.id) }.randomElement()
+                    case "Supporter":
+                        assignedSuperPower = dataManager.superPowers.filter { [206, 207].contains($0.id) }.randomElement()
+                        assignedSwitchAbility = dataManager.switchAbilities.filter { [106, 107].contains($0.id) }.randomElement()
+                    case "Wild":
+                        assignedSuperPower = dataManager.superPowers.randomElement()
+                        assignedSwitchAbility = dataManager.switchAbilities.randomElement()
+                    default: break
+                    }
+                    
+                    cardEntity.superPowerName = assignedSuperPower?.name
+                    cardEntity.superPowerDescription = assignedSuperPower?.description
+                    cardEntity.switchAbilityName = assignedSwitchAbility?.name
+                    cardEntity.switchAbilityDescription = assignedSwitchAbility?.description
+                    cardEntity.timestamp = Date()
+                }
+            }
+
+            do {
+                try context.save()
+                // Set the flag so this process doesn't run again.
+                defaults.set(true, forKey: "didAddAllDevCards")
+                print("--- DEV MODE: Successfully added all cards to the collection. ---")
+            } catch {
+                print("--- DEV MODE ERROR: Failed to save dev cards. \(error.localizedDescription) ---")
+            }
+        }
 }
 
 class DataManager {
@@ -52,7 +141,7 @@ class DataManager {
     }
     
     // The load method is now static to be callable during property initialization.
-    private static func load<T: Decodable>(_ filename: String) -> T {
+    static func load<T: Decodable>(_ filename: String) -> T {
         let data: Data
         guard let file = Bundle.main.url(forResource: filename, withExtension: nil) else {
             fatalError("Couldn't find \(filename) in main bundle.")
@@ -98,6 +187,9 @@ class AppManager: ObservableObject {
     private var superPowerPool: [Power] = []
     private var switchAbilityPool: [Power] = []
     
+    // **NEW:** A separate deck for the special, rare cards.
+    private var watercolorWildkinDeck: [WildkinData] = []
+    
     // Archetype-Specific Power Pools
     private var guardianSuperPowers: [Power] = []
     private var strikerSuperPowers: [Power] = []
@@ -121,60 +213,86 @@ class AppManager: ObservableObject {
     }
     
     /// Generates a new `AnimalCard` object to be unwrapped by the user.
-    func prepareNewCardForUnwrapping() {
-        guard cardToUnwrap == nil, newCardsEarned > 0, let baseAnimal = wildkinDeck.randomElement() else { return }
-        
-        newCardsEarned -= 1
-        
-        let rarityRoll = Double.random(in: 0...1)
-        var rarity: Rarity = .normal
-        if rarityRoll > 0.95 { rarity = .epic }
-        else if rarityRoll > 0.70 { rarity = .rare }
-        
-        var finalStamina = baseAnimal.stamina
-        var finalStrength = baseAnimal.strength
-        
-        switch rarity {
-        case .rare: finalStamina += 1
-        case .epic: finalStamina += 2; finalStrength += 1
-        case .normal: break
-        }
-        
-        var assignedSuperPower: Power?
-        var assignedSwitchAbility: Power?
+    /// **MODIFIED:** This function now includes a special roll for a rare "Watercolor" card
+       /// before falling back to the standard card generation process.
+       func prepareNewCardForUnwrapping() {
+           guard cardToUnwrap == nil, newCardsEarned > 0 else { return }
+           
+           newCardsEarned -= 1
+           
+           var baseAnimal: WildkinData?
+           var rarity: Rarity
+           
+           // --- Special Watercolor Card Roll ---
+           // Let's give a 5% chance to get a special watercolor card.
+           let watercolorRoll = Double.random(in: 0...1)
+           
+           if watercolorRoll <= 0.05 && !watercolorWildkinDeck.isEmpty {
+               // Success! The user gets a special card.
+               baseAnimal = watercolorWildkinDeck.randomElement()
+               // These cards are ALWAYS epic.
+               rarity = .epic
+               
+           } else {
+               // Failure. The user gets a standard card.
+               baseAnimal = wildkinDeck.randomElement()
+               
+               // Standard rarity roll for the regular card.
+               let rarityRoll = Double.random(in: 0...1)
+               if rarityRoll > 0.95 { rarity = .epic }
+               else if rarityRoll > 0.70 { rarity = .rare }
+               else { rarity = .normal }
+           }
+           
+           guard let finalBaseAnimal = baseAnimal else {
+               // If something went wrong (e.g., decks are empty), reset and exit.
+               newCardsEarned += 1 // Give the credit back.
+               return
+           }
+           
+           var finalStamina = finalBaseAnimal.stamina
+           var finalStrength = finalBaseAnimal.strength
+           
+           // Apply stat boosts based on the final rarity.
+           switch rarity {
+           case .rare: finalStamina += 1
+           case .epic: finalStamina += 2; finalStrength += 1
+           case .normal: break
+           }
+           
+           var assignedSuperPower: Power?
+           var assignedSwitchAbility: Power?
 
-        // **MODIFIED:** Added the "Wild" case to pull from the global power pools.
-        switch baseAnimal.archetype {
-        case "Guardian":
-            assignedSuperPower = guardianSuperPowers.randomElement()
-            assignedSwitchAbility = guardianSwitchAbilities.randomElement()
-        case "Striker":
-            assignedSuperPower = strikerSuperPowers.randomElement()
-            assignedSwitchAbility = strikerSwitchAbilities.randomElement()
-        case "Supporter":
-            assignedSuperPower = supporterSuperPowers.randomElement()
-            assignedSwitchAbility = supporterSwitchAbilities.randomElement()
-        case "Wild":
-            // "Wild" cards can get any ability from the main pools.
-            assignedSuperPower = superPowerPool.randomElement()
-            assignedSwitchAbility = switchAbilityPool.randomElement()
-        default: break
-        }
-        
-        let newCard = AnimalCard(
-            name: baseAnimal.name,
-            archetype: baseAnimal.archetype,
-            rarity: rarity,
-            stamina: finalStamina,
-            strength: finalStrength,
-            shield: baseAnimal.shield,
-            speed: baseAnimal.speed,
-            superPower: assignedSuperPower,
-            switchAbility: assignedSwitchAbility
-        )
-        
-        self.cardToUnwrap = newCard
-    }
+           switch finalBaseAnimal.archetype {
+           case "Guardian":
+               assignedSuperPower = guardianSuperPowers.randomElement()
+               assignedSwitchAbility = guardianSwitchAbilities.randomElement()
+           case "Striker":
+               assignedSuperPower = strikerSuperPowers.randomElement()
+               assignedSwitchAbility = strikerSwitchAbilities.randomElement()
+           case "Supporter":
+               assignedSuperPower = supporterSuperPowers.randomElement()
+               assignedSwitchAbility = supporterSwitchAbilities.randomElement()
+           case "Wild":
+               assignedSuperPower = superPowerPool.randomElement()
+               assignedSwitchAbility = switchAbilityPool.randomElement()
+           default: break
+           }
+           
+           let newCard = AnimalCard(
+               name: finalBaseAnimal.name,
+               archetype: finalBaseAnimal.archetype,
+               rarity: rarity,
+               stamina: finalStamina,
+               strength: finalStrength,
+               shield: finalBaseAnimal.shield,
+               speed: finalBaseAnimal.speed,
+               superPower: assignedSuperPower,
+               switchAbility: assignedSwitchAbility
+           )
+           
+           self.cardToUnwrap = newCard
+       }
     
     /// Saves the newly unwrapped card to the user's collection in Core Data.
     func addCardToCollection() {
@@ -226,12 +344,14 @@ class AppManager: ObservableObject {
     }
     
     // MARK: - Data Loading and Parsing
-    private func loadAllCardData() {
-        wildkinDeck = load("wildkins.json")
-        superPowerPool = load("super_powers.json")
-        switchAbilityPool = load("switch_abilities.json")
-        mapPowersToArchetypes()
-    }
+    /// **MODIFIED:** Now loads the new `watercolor_wildkins.json` file.
+      private func loadAllCardData() {
+          wildkinDeck = load("wildkins.json")
+          superPowerPool = load("super_powers.json")
+          switchAbilityPool = load("switch_abilities.json")
+          watercolorWildkinDeck = load("watercolor_wildkins.json") // Load the new deck
+          mapPowersToArchetypes()
+      }
     
     private func mapPowersToArchetypes() {
         guardianSuperPowers = superPowerPool.filter { [201, 202, 203].contains($0.id) }
